@@ -1,0 +1,7 @@
+2020-5-22
+ben,1
+brady,0
+cameron,1
+izzy,5
+paddy,7
+tyler,3
