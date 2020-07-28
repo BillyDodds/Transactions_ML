@@ -13,6 +13,10 @@ from sklearn.model_selection import train_test_split, StratifiedKFold # type: ig
 from sklearn.preprocessing import StandardScaler # type: ignore
 from sklearn.tree import DecisionTreeClassifier # type: ignore
 from sklearn.svm import LinearSVC # type: ignore
+from sklearn.neighbors import KNeighborsClassifier # type: ignore
+from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, BaggingClassifier # type:ignore
+from sklearn.multiclass import OneVsRestClassifier, OneVsOneClassifier
+from sklearn.neural_network import MLPClassifier
 
 ## My Functions ##
 from components.scripts.load_data import load_data # type: ignore
@@ -225,7 +229,16 @@ if __name__ == "__main__":
         exit()
     try:
         algorithm = sys.argv[2].lower() # dt, svm
-        models = {"dt":DecisionTreeClassifier(), "mydt":MyDecisionTree(), "svm":LinearSVC(max_iter=10000)}
+        models = {
+            "dt":DecisionTreeClassifier(),
+            "mydt":MyDecisionTree(), 
+            "svm":LinearSVC(max_iter=10000),
+            "nn":None,
+            "rf":RandomForestClassifier(),
+            "ovr":OneVsRestClassifier(LinearSVC(max_iter=10000)),
+            "ovo":OneVsOneClassifier(LinearSVC(max_iter=10000)),
+            "mlp":MLPClassifier(max_iter=10000)
+        }
         if algorithm not in models.keys():
             print(f"Invalid algorithm. Choose from: {[models.keys()]}")
             print("run \n$python model.py help\n for help")
@@ -236,18 +249,22 @@ if __name__ == "__main__":
         exit()
 
 
-    model = models[algorithm]
-
-    flag_vals:Dict[str, Union[int, bool]] = {"-f":10, "-l":False, "-w":False, "-v":False, "-s":False}
+    flag_vals:Dict[str, Union[int, bool]] = {"-f":10, "-l":False, "-w":False, "-v":False, "-s":False, "-n":5, "-r":False, "-bag":False, "-boost":False}
 
     flags = sys.argv[3::] # -f=<n_folds> (number of CV folds),
                           # -l (whether lookup is used), 
                           # -w (whether webscraping is used), 
                           # -v (verbose)
                           # -s (slow mode (no parallel processing))
+                          # -n=<n_neighbours> (number of neighbours in nn algorithm)
+                          # -r (record result)
+                          # -bag (bootstrap aggregation on chosen classifier)
+                          # -boost (adaboost on chosen classifier)
 
     for flag in flags:
-        if flag[0:2] in flag_vals.keys():
+        if flag.split("=")[0] in ["-boost", "-bag"]:
+            flag_vals[flag] = True
+        elif flag[0:2] in flag_vals.keys():
             if len(flag.split("=")) == 2:
                 try:
                     flag_vals[flag[0:2]] = int(flag.split("=")[1])
@@ -258,6 +275,16 @@ if __name__ == "__main__":
         else:
             print(f"Couldn't interperet flag {flag}")
 
+
+    # Set Nearest Neighbour algorithm
+    models["nn"] = KNeighborsClassifier(n_neighbors=flag_vals["-n"])
+
+    if flag_vals["-bag"]:
+        model = BaggingClassifier(models[algorithm])
+    elif flag_vals["-boost"]:
+        model = AdaBoostClassifier(models[algorithm])
+    else:
+        model = models[algorithm]
 
     ### Load in data ###
 
@@ -306,8 +333,19 @@ if __name__ == "__main__":
                 pool.apply_async(run_fold, args=(X, fold, model, flag_vals["-w"], flag_vals["-l"], flag_vals["-v"]), callback = record)
             pool.close()
             pool.join()
+        
+        acc = round(np.mean(accuracies),4)
 
-        print(f"Average over {n_folds} folds: {round(np.mean(accuracies),4)}" )
+        if flag_vals["-r"]:
+            info = [flag_vals["-f"], flag_vals["-l"], flag_vals["-w"], algorithm, acc]
+            entry = ""
+            for inf in info:
+                entry += str(inf) + ","
+            entry = entry[:-1] + "\n"
+            with open("./components/files/results.csv", "a") as file:
+                file.write(entry)
+
+        print(f"Average over {n_folds} folds: {acc}" )
 
     elif mode == "predict": 
 
