@@ -1,7 +1,7 @@
-2020-5-22
-ben,1
-brady,0
+2020-7-27
+ben,0
+brady,1
 cameron,1
-izzy,5
-paddy,7
-tyler,3
+izzy,1
+paddy,1
+tyler,5

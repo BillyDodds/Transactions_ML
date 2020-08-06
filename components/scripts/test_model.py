@@ -1,13 +1,13 @@
 
-import unittest
-import model
-from components.scripts import scraper, load_data
-from nltk.corpus import stopwords
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler
-from sklearn.tree import DecisionTreeClassifier
-from components.scripts.my_exceptions import InvalidDataFrameFormat
+import unittest 
+import process_data as model
+import scraper, load_data
+from nltk.corpus import stopwords # type: ignore
+import pandas as pd # type: ignore
+import numpy as np # type: ignore
+from sklearn.preprocessing import StandardScaler # type: ignore
+from sklearn.tree import DecisionTreeClassifier # type: ignore
+from my_exceptions import InvalidDataFrameFormat
 
 
 
@@ -16,7 +16,7 @@ class TestModel(unittest.TestCase):
     def setUpClass(self):
         self.blacklist = stopwords.words('english')
         self.blacklist += ['card', 'aus', 'au', 'ns', 'nsw', 'xx', 'pty', 'ltd', 'nswau']
-        self.test_data = pd.read_csv("./components/files/test_data.csv", index_col=0)
+        self.test_data = pd.read_csv("../files/test_data.csv", index_col=0)
         self.easy_corpus = {
             'test': [
                 'mcdonalds', 'chargrill', 'charlies', 'blooms', 'quattro', 'bws', 'berry'

@@ -1,6 +1,6 @@
 import math
-import numpy as np
-import pandas as pd
+import numpy as np # type: ignore
+import pandas as pd # type: ignore
 
 class Node:
     def __init__(self, attribute, parent_attr, parent_attr_value, names):

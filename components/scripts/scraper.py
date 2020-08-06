@@ -3,7 +3,7 @@ import requests # type: ignore
 from bs4 import BeautifulSoup # type: ignore
 import re
 from typing import Union, Optional
-import numpy as np
+import numpy as np # type: ignore
 
 def google(query:str, verbose=True) -> str:
     headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_10_1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/39.0.2171.95 Safari/537.36'}

@@ -1,6 +1,10 @@
 import pandas as pd # type: ignore
 import numpy as np # type: ignore
 
+from nltk.corpus import stopwords
+
+from components.scripts.process_data import clean, clean_chop
+
 def load_data(file:str) -> pd.DataFrame:
     # Load in data
     data = pd.read_csv('./components/files/' + file, header=None)
@@ -65,5 +69,16 @@ def load_data(file:str) -> pd.DataFrame:
 
     # Add boolean value for whether the transaction was on the weekend (friday, saturday or sunday)
     tr_data["weekday"] = tr_data.date.dt.weekday
+
+    ### Perform NLP ###
+
+    # Define blacklist
+    blacklist = stopwords.words('english')
+    blacklist += ['card', 'aus', 'au', 'ns', 'nsw', 'xx', 'pty', 'ltd', 'nswau']
+
+    # Create two columns, one with the corpus candidates (chopped) for each entry 
+    # and another with just features (unchopped)
+    tr_data["desc_corpus"] = [clean_chop(desc, blacklist) for desc in tr_data.description]
+    tr_data["desc_features"] = [clean(desc, blacklist) for desc in tr_data.description]
 
     return tr_data

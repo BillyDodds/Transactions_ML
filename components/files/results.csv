@@ -39,3 +39,8 @@ folds,lookup,webscrape,model,accuracy
 10,False,False,mlp,0.89
 10,False,False,mlp,0.8867
 10,False,False,mlp,0.8683
+10,False,False,rf (mss=7-c=e-mf=2-ne=1000),0.88
+10,False,False,rf (mss=7-c=e-mf=2-ne=1000),0.8917
+10,False,False,rf (mss=7-c=e-mf=2-ne=1000),0.8917
+10,False,False,rf (mss=7-c=e-mf=2-ne=1000),0.8883
+10,False,False,rf (mss=7-c=e-mf=2-ne=1000),0.8767
