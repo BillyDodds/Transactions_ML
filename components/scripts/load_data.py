@@ -5,16 +5,16 @@ from nltk.corpus import stopwords
 
 from components.scripts.process_data import clean, clean_chop
 
-def load_data(file:str) -> pd.DataFrame:
+def load_data(path:str) -> pd.DataFrame:
     # Load in data
-    data = pd.read_csv('./components/files/' + file, header=None)
+    data = pd.read_csv(path + "CSVData.csv", header=None)
     data.columns = ["date", "amount", "description", "balance"]
     data['date']  = pd.to_datetime(data['date'], format='%d/%m/%Y')
     data = data.astype({'amount':'float', 'balance':'float'})
     data = data.drop("balance", axis=1)
 
     # Load in labels and join to data
-    labels = pd.read_csv("./components/files/transactions_labelled.csv")
+    labels = pd.read_csv(path + "transactions_labelled.csv")
     labels = labels.drop('date', axis=1)
     labels = labels.drop_duplicates()
 

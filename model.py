@@ -70,17 +70,17 @@ if __name__ == "__main__":
         exit()
 
 
-    flag_vals:Dict[str, Union[int, bool]] = {"-f":10, "-l":False, "-w":False, "-v":False, "-s":False, "-n":5, "-r":False}
+    flag_vals:Dict[str, Union[int, bool]] = {"-f":10, "-l":False, "-w":False, "-v":False, "-s":False, "-n":5, "-r":False, "-p":False}
 
-    flags = sys.argv[3::] # -f=<n_folds> (number of CV folds),
+    flags = sys.argv[3::] # -p (whether private datafiles are used [CSVData.csv, google.csv, transactions_labelled.csv])
+                          # -f=<n_folds> (number of CV folds),
                           # -l (whether lookup is used), 
                           # -w (whether webscraping is used), 
                           # -v (verbose)
                           # -s (slow mode (no parallel processing))
                           # -n=<n_neighbours> (number of neighbours in nn algorithm)
                           # -r (record result)
-                          # -bag (bootstrap aggregation on chosen classifier)
-                          # -boost (adaboost on chosen classifier)
+                          
 
     for flag in flags:
         if flag[0:2] in flag_vals.keys():
@@ -100,9 +100,15 @@ if __name__ == "__main__":
 
     model = models[algorithm]
 
-    ### Load in data ###
+    # Set path for sensitive files
+    path:str
+    if flag_vals["-p"]:
+        path = "./components/private_files/"
+    else:
+        path = "./components/files/"
 
-    tr_data = load_data("CSVData.csv")
+    ### Load in data ###
+    tr_data = load_data(path)
 
 
 
@@ -161,7 +167,7 @@ if __name__ == "__main__":
             exit()
 
         # Join Webscraping
-        results = pd.read_csv("./components/files/google.csv")
+        results = pd.read_csv(path + "google.csv")
 
         googled = testing.merge(results, how="left", on="desc_features", validate="many_to_one")
         ungoogled = googled[pd.isna(googled.google)]
@@ -169,9 +175,9 @@ if __name__ == "__main__":
             # Scrape any descriptions that haven't been googled before.
             ungoogled = ungoogled[["desc_features"]].drop_duplicates()
             ungoogled["google"] = [google(query) for query in ungoogled.desc_features]
-            ungoogled.to_csv("./components/files/google.csv", mode = 'a', header = False, index=False)
+            ungoogled.to_csv(path + "google.csv", mode = 'a', header = False, index=False)
 
-            results = pd.read_csv("./components/files/google.csv")
+            results = pd.read_csv(path + "google.csv")
             googled = tr_data.merge(results, how="left", on="desc_features", validate="many_to_one")
             assert len(googled[pd.isna(googled.google)]) == 0
         
@@ -219,7 +225,7 @@ if __name__ == "__main__":
         X_test.columns = ["date", "amount", "description", "pred_category", "certain"]
         certain = X_test[X_test.certain].drop("certain", axis=1)
         certain = certain[["date", "amount", "description", "pred_category"]]
-        certain.to_csv("components/files/transactions_labelled.csv", mode = 'a', header = False, index=False)
+        certain.to_csv(path + "transactions_labelled.csv", mode = 'a', header = False, index=False)
 
         while True:
             uncertain = X_test[~X_test.certain].drop("certain", axis=1)
@@ -271,7 +277,7 @@ if __name__ == "__main__":
                 print("Restarting confirmation labelling")
                 continue
 
-        uncertain.to_csv("components/files/transactions_labelled.csv", mode = 'a', header = False, index=False)
+        uncertain.to_csv(path + "transactions_labelled.csv", mode = 'a', header = False, index=False)
 
 
 

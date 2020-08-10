@@ -1,7 +1,7 @@
 2020-7-27
 ben,0
-brady,1
+brady,2
 cameron,1
-izzy,1
-paddy,1
+izzy,2
+paddy,2
 tyler,5

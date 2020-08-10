@@ -3,7 +3,7 @@ import numpy as np
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-data:pd.DataFrame = pd.read_csv("CSVData.csv", header=None)
+data:pd.DataFrame = pd.read_csv("./components/files/CSVData.csv", header=None)
 data.columns = ["date", "amount", "description", "balance"]
 data['date']  = pd.to_datetime(data['date'], format='%d/%m/%Y')
 data = data.astype({'amount':'float', 'balance':'float'})
@@ -41,7 +41,7 @@ tutoring.to_csv("tutoring.csv")
 # collect sessions info
 last_checked = ""
 sessions = {}
-with open("Tutoring.txt") as file:
+with open("./tutoring/Tutoring.txt") as file:
     i = 0
     for line in file:
         line = line.strip()

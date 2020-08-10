@@ -1,7 +1,7 @@
 import pandas as pd # type: ignore
 import numpy as np # type: ignore
 import re
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any, Tuple, Callable
 
 from sklearn.preprocessing import StandardScaler # type: ignore
 
@@ -94,7 +94,7 @@ def get_corpora(training:pd.DataFrame, min_freq=0) -> Dict[str, List[str]]:
 def distance(string1:str, string2:str) -> float:
     return nltk.jaccard_distance(set(string1), set(string2))
 
-def desc_dist(corpus:List[str], desc:str) -> float:
+def desc_dist(corpus:List[str], desc:str, distance:Callable=distance) -> float:
     if len(corpus) == 0:
         return 100.0
     min_distances = []
@@ -112,7 +112,7 @@ def desc_dist(corpus:List[str], desc:str) -> float:
 
 
 
-def NLP_distances(dat:pd.DataFrame, corpus:Dict[str, List[str]]) -> pd.DataFrame:
+def NLP_distances(dat:pd.DataFrame, corpus:Dict[str, List[str]], desc_dist:Callable=desc_dist) -> pd.DataFrame:
     data=dat.copy()
     try:
         assert set(["description", "date", "desc_features", "desc_corpus"]).issubset(set(data.columns))

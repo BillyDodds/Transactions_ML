@@ -163,14 +163,6 @@ class TestModel(unittest.TestCase):
         result = model.run_fold(easy_data, test_split_3, ml_model, verbose=False)
         self.assertEqual(result, 1.0)
 
-# class TestScraper(unittest.TestCase):
-#     @classmethod
-#     def setUpClass(self):
-#         pass
-    
-#     def test_google(self):
-#         pass
-
 
 if __name__ == '__main__':
     unittest.main()
