@@ -9,7 +9,10 @@ def load_data(path:str) -> pd.DataFrame:
     # Load in data
     data = pd.read_csv(path + "CSVData.csv", header=None)
     data.columns = ["date", "amount", "description", "balance"]
-    data['date']  = pd.to_datetime(data['date'], format='%d/%m/%Y')
+    try:
+        data['date']  = pd.to_datetime(data['date'], format='%d/%m/%Y')
+    except ValueError:
+        data['date']  = pd.to_datetime(data['date'])
     data = data.astype({'amount':'float', 'balance':'float'})
     data = data.drop("balance", axis=1)
 
@@ -22,6 +25,9 @@ def load_data(path:str) -> pd.DataFrame:
     labels.description = labels.description.str.lower()
     data.description = data.description.str.strip()
     data.description = data.description.str.lower()
+
+    labels.amount = labels.amount.round(2)
+    data.amount = data.amount.round(2)
 
     data_labs = data.merge(labels, on=["description", "amount"], how="left", validate="many_to_one")
 
