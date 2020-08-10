@@ -1,2 +1,6 @@
-tutoring
+tutoring/
 components/private_files
+**/__pycache__/
+**/.mypy_cache/
+**/.ipynb_checkpoints/
+*.vec
