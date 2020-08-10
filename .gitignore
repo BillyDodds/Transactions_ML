@@ -4,4 +4,4 @@ components/private_files
 **/.mypy_cache/
 **/.ipynb_checkpoints/
 *.vec
-.DS_Store
+**/.DS_Store
