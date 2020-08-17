@@ -5,6 +5,17 @@ from nltk.corpus import stopwords
 
 from components.scripts.process_data import clean, clean_chop
 
+# Define blacklist for NLP
+blacklist = stopwords.words('english')
+blacklist += ['card', 'aus', 'au', 'ns', 'nsw', 'xx', 'pty', 'ltd', 'nswau']
+
+# Define rounding function for labels join
+def round_abs_up(num, base):
+    sign = np.sign(num)
+    result = np.ceil(abs(num)/base)*base
+    return sign*result
+
+
 def load_data(path:str) -> pd.DataFrame:
     # Load in data
     data = pd.read_csv(path + "CSVData.csv", header=None)
@@ -13,32 +24,84 @@ def load_data(path:str) -> pd.DataFrame:
         data['date']  = pd.to_datetime(data['date'], format='%d/%m/%Y')
     except ValueError:
         data['date']  = pd.to_datetime(data['date'])
-    data = data.astype({'amount':'float', 'balance':'float'})
     data = data.drop("balance", axis=1)
+    data = data.astype({'amount':'float'})
 
     # Load in labels and join to data
-    labels = pd.read_csv(path + "transactions_labelled.csv")
-    labels = labels.drop('date', axis=1)
-    labels = labels.drop_duplicates()
+    try:
+        labels = pd.read_csv(path + "labels.csv", header=None)
+        labels.columns = ["round_amount", "clean_desc", "category"]
 
-    labels.description = labels.description.str.strip()
-    labels.description = labels.description.str.lower()
-    data.description = data.description.str.strip()
-    data.description = data.description.str.lower()
+        # Merge some of the underrepresented labels
+        labels.category = ["beers" if cat == "entertainment" else cat for cat in labels.category]
+        labels.category = ["beers" if cat == "booze" else cat for cat in labels.category]
+        labels.category = ["wages" if cat == "tutoring" else cat for cat in labels.category]
+        labels.category = ["health" if cat == "education" else cat for cat in labels.category]
+        labels.category = ["life/wellbeing" if cat == "health" else cat for cat in labels.category]
+        labels.category = ["transfer" if cat == "donation" else cat for cat in labels.category]
+        labels.category = ["transport" if cat in ["uber", "public transport", "fuel"] else cat for cat in labels.category]
 
-    labels.amount = labels.amount.round(2)
-    data.amount = data.amount.round(2)
+        data.description = data.description.str.strip()
+        data.description = data.description.str.lower()
+        data["clean_desc"] = [clean(desc, blacklist) for desc in data.description]
+        data["round_amount"] = [round_abs_up(am, 5) for am in data.amount]
 
-    data_labs = data.merge(labels, on=["description", "amount"], how="left", validate="many_to_one")
+        # Merge on unique description, label pairings first
+        desc_table = pd.DataFrame(
+            labels[["clean_desc", "category"]]
+            .groupby(["clean_desc"])["category"]
+            .unique()
+            .apply(','.join)
+            .reset_index()
+        )
 
-    # Merge some of the underrepresented labels
-    data_labs.category = ["beers" if cat == "entertainment" else cat for cat in data_labs.category]
-    data_labs.category = ["beers" if cat == "booze" else cat for cat in data_labs.category]
-    data_labs.category = ["wages" if cat == "tutoring" else cat for cat in data_labs.category]
-    data_labs.category = ["health" if cat == "education" else cat for cat in data_labs.category]
-    data_labs.category = ["life/wellbeing" if cat == "health" else cat for cat in data_labs.category]
-    data_labs.category = ["transfer" if cat == "donation" else cat for cat in data_labs.category]
-    data_labs.category = ["transport" if cat in ["uber", "public transport", "fuel"] else cat for cat in data_labs.category]
+        just_desc = desc_table[~desc_table.category.str.contains(",")]
+        amount_desc = desc_table[desc_table.category.str.contains(",")]
+
+        data_labs = data.merge(just_desc, on="clean_desc", how="left", validate="many_to_one")
+
+        # Take those entries in "labels.csv" that had two or more different labels for the same description ("amount_desc")
+        # and merge their labels on [description, label, amount]
+        amount_desc_table = pd.DataFrame(
+            labels[["round_amount", "clean_desc", "category"]]
+            .groupby(["clean_desc", "round_amount"])["category"]
+            .unique()
+            .apply(','.join)
+            .reset_index()
+        )
+
+        # There should be no entries with the same description and the same value but different labels
+        should_be_empty = amount_desc_table[amount_desc_table.category.str.contains(",")]
+        if not should_be_empty.empty:
+            print(
+                "WARNING:",
+                "In 'labels.csv' there are two entries with the same rounded value and same description, but different classes. \n\n", 
+                should_be_empty, 
+                "\n\nThese will be omitted from the model"
+            )
+        
+        # Omit any conflicting labels
+        amount_desc_table = amount_desc_table[~amount_desc_table.category.str.contains(",")]
+
+        # Take only those rows with the descriptions that had multiple labels.
+        amount_desc_table = amount_desc_table[
+            [True if desc in list(amount_desc.clean_desc) else False for desc in amount_desc_table.clean_desc] 
+        ]
+
+        # Merge on amount and description
+        data_labs = data_labs.merge(amount_desc_table, on=["round_amount","clean_desc"], how="left", validate="many_to_one")
+
+        # Zip category values together
+        data_labs["category"] = [x if str(x) != "nan" else y for x, y in zip(data_labs.category_x, data_labs.category_y)]
+        data_labs = data_labs.drop(["category_x", "category_y", "clean_desc", "round_amount"], axis=1)
+
+    except FileNotFoundError:
+        print(f'No "labels.csv" file found in "{path}". Ignore if using "autolabel" mode.')
+        data_labs = data
+        data_labs.description = data_labs.description.str.strip()
+        data_labs.description = data_labs.description.str.lower()
+        data_labs["category"] = [np.nan for i in range(len(data_labs.amount))]
+
 
     data_labs = data_labs.reset_index(drop=True)
 
@@ -59,7 +122,7 @@ def load_data(path:str) -> pd.DataFrame:
     # it is assumed that the date of the record is the date of the transaction.
 
     transaction_date = []
-    for index, row in data_labs.iterrows():
+    for _, row in data_labs.iterrows():
         if pd.isnull(row.value_date):
             transaction_date.append(row.date)
         else:
@@ -77,10 +140,6 @@ def load_data(path:str) -> pd.DataFrame:
     tr_data["weekday"] = tr_data.date.dt.weekday
 
     ### Perform NLP ###
-
-    # Define blacklist
-    blacklist = stopwords.words('english')
-    blacklist += ['card', 'aus', 'au', 'ns', 'nsw', 'xx', 'pty', 'ltd', 'nswau']
 
     # Create two columns, one with the corpus candidates (chopped) for each entry 
     # and another with just features (unchopped)

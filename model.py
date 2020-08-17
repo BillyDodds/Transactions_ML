@@ -7,15 +7,15 @@ from sklearn.model_selection import StratifiedKFold # type: ignore
 from sklearn.tree import DecisionTreeClassifier # type: ignore
 from sklearn.svm import LinearSVC # type: ignore
 from sklearn.neighbors import KNeighborsClassifier # type: ignore
-from sklearn.ensemble import RandomForestClassifier, AdaBoostClassifier, BaggingClassifier # type:ignore
+from sklearn.ensemble import RandomForestClassifier # type:ignore
 from sklearn.multiclass import OneVsRestClassifier, OneVsOneClassifier
 from sklearn.neural_network import MLPClassifier
 
 ## My Functions ##
 from components.scripts.load_data import load_data # type: ignore
 from components.scripts.MyDecisionTree import MyDecisionTree # type: ignore
-
-from components.scripts.process_data import get_corpora, NLP_distances, run_fold
+from components.scripts.process_data import get_corpora, NLP_distances, run_fold, get_lookup, get_webscrape
+from components.scripts.scraper import categorise # type: ignore
 
 pd.set_option('mode.chained_assignment', None)
 
@@ -23,65 +23,79 @@ pd.set_option('mode.chained_assignment', None)
 def help():
     return print(
 '''
+USAGE:
 python model.py <mode> <algorithm> <flags>
-
 
 MODES:
 evaluate        perform k-fold cross validation (default 10-fold)
 predict         use current labelled set of transactions to predict unlabelled transactions
 help            shows this message
 
+ALGORITHMS:
+dt              decision tree
+mydt            my implementation of a decision tree
+svm             support vector machine
+nn              nearest neighbour
+rf              random forest
+ovr             one vs. rest
+ovo             one vs. one
+mlp             multi-layer perceptron
+
 FLAGS:
--f=<n_folds>    set number of CV folds
+-f=<n_folds>    set number of CV folds (default 10)
 -l              whether lookup is used
 -w              whether webscraping is used
 -v              verbose mode
 -s              slow mode (no parallel processing)
--p=<min_proportion>
+-p              set file path to "components/private_files" (default "components/files")
+-n=<neighbours> set number of neighbours for nn algorithm (default 5)
+-r              record result in "<path>/results.csv"
 '''
     )
 
+models = {
+    "dt":DecisionTreeClassifier(),
+    "mydt":MyDecisionTree(), 
+    "svm":LinearSVC(max_iter=10000),
+    "nn":None,
+    "rf":RandomForestClassifier(**{'min_samples_split': 7, 'criterion': 'entropy', 'max_features': 2, 'n_estimators':1000}),
+    "ovr":OneVsRestClassifier(LinearSVC(max_iter=10000)),
+    "ovo":OneVsOneClassifier(LinearSVC(max_iter=10000)),
+    "mlp":MLPClassifier(max_iter=10000)
+}
+defaults = {
+    "-f":10,
+    "-l":False,
+     "-w":False,
+     "-v":False,
+     "-s":False,
+     "-n":5,
+     "-r":False,
+     "-p":False
+}
+
 
 if __name__ == "__main__":
+    try:
+        mode = sys.argv[1].lower() # evaluate, predict
+        algorithm = sys.argv[2].lower() # dt, svm
+    except IndexError:
+        print("Incorrect format. Get some help: ")
+        help()
+        exit()
 
-    mode = sys.argv[1].lower() # evaluate, predict
     if mode == "help":
         help()
         exit()
-    try:
-        algorithm = sys.argv[2].lower() # dt, svm
-        models = {
-            "dt":DecisionTreeClassifier(),
-            "mydt":MyDecisionTree(), 
-            "svm":LinearSVC(max_iter=10000),
-            "nn":None,
-            "rf":RandomForestClassifier(**{'min_samples_split': 7, 'criterion': 'entropy', 'max_features': 2, 'n_estimators':1000}),
-            "ovr":OneVsRestClassifier(LinearSVC(max_iter=10000)),
-            "ovo":OneVsOneClassifier(LinearSVC(max_iter=10000)),
-            "mlp":MLPClassifier(max_iter=10000)
-        }
-        if algorithm not in models.keys():
-            print(f"Invalid algorithm. Choose from: {list(models.keys())}")
-            print("run: \n$ python model.py help\nfor help")
-            exit()
-    except:
-        print("Unrecognised format. Get some help: ")
-        help()
+
+    if algorithm not in models.keys():
+        print(f"Invalid algorithm. Choose from: {list(models.keys())}")
+        print("run: \n$ python model.py help\nfor help")
         exit()
 
-
-    flag_vals:Dict[str, Union[int, bool]] = {"-f":10, "-l":False, "-w":False, "-v":False, "-s":False, "-n":5, "-r":False, "-p":False}
-
-    flags = sys.argv[3::] # -p (whether private datafiles are used [CSVData.csv, google.csv, transactions_labelled.csv])
-                          # -f=<n_folds> (number of CV folds),
-                          # -l (whether lookup is used), 
-                          # -w (whether webscraping is used), 
-                          # -v (verbose)
-                          # -s (slow mode (no parallel processing))
-                          # -n=<n_neighbours> (number of neighbours in nn algorithm)
-                          # -r (record result)
-                          
-
+    # Collect and apply flags
+    flags = sys.argv[3::]         
+    flag_vals = defaults     
     for flag in flags:
         if flag[0:2] in flag_vals.keys():
             if len(flag.split("=")) == 2:
@@ -94,10 +108,10 @@ if __name__ == "__main__":
         else:
             print(f"Couldn't interperet flag {flag}")
 
-
     # Set Nearest Neighbour algorithm
     models["nn"] = KNeighborsClassifier(n_neighbors=flag_vals["-n"])
 
+    # Choose model
     model = models[algorithm]
 
     # Set path for sensitive files
@@ -106,101 +120,89 @@ if __name__ == "__main__":
         path = "./components/private_files/"
     else:
         path = "./components/files/"
+    
+    # path = "./components/test_files/"
 
     ### Load in data ###
     tr_data = load_data(path)
 
-
-
     if mode == "evaluate":
-        n_folds = flag_vals["-f"]
-
         # Remove unknown transactions
         X = tr_data[~pd.isnull(tr_data.category)]
 
+        # Set folds
+        n_folds = flag_vals["-f"]
         splitter = StratifiedKFold(n_splits=n_folds, shuffle=True)
         folds = list(splitter.split(X.drop("category", axis=1), X.category))
 
         print(f"Performing {n_folds}-fold cross validation")
         
+        # Define callback function for multiprocessing
         accuracies = []
         def record(acc):
             accuracies.append(acc)
 
-        if flag_vals["-s"]:
+        if flag_vals["-s"]: # no parallel processing
             upto = 1
             for fold in folds:
                 print(str(upto) + " of " + str(n_folds))
-                accuracies.append(run_fold(X, fold, model, web_scrape=flag_vals["-w"], lookup=flag_vals["-l"], verbose=flag_vals["-v"]))
+                record(
+                    run_fold(
+                        X, fold, model, path,
+                        web_scrape=flag_vals["-w"], lookup=flag_vals["-l"], verbose=flag_vals["-v"]
+                    )
+                )
                 upto += 1
-        else:
-            accuracies = []
-            def record(acc):
-                accuracies.append(acc)
-            
+        else: # parallel processing
             pool = multiprocessing.Pool(min(multiprocessing.cpu_count(), n_folds))
             for fold in folds:
-                pool.apply_async(run_fold, args=(X, fold, model, flag_vals["-w"], flag_vals["-l"], flag_vals["-v"]), callback = record)
+                pool.apply_async(
+                    run_fold, 
+                    args=(
+                        X, fold, model, path,
+                        flag_vals["-w"], flag_vals["-l"], flag_vals["-v"]
+                        ), 
+                    callback=record
+                )
             pool.close()
             pool.join()
         
         acc = round(np.mean(accuracies),4)
 
+        # Record result if specified to
         if flag_vals["-r"]:
-            info = [flag_vals["-f"], flag_vals["-l"], flag_vals["-w"], algorithm + ' (mss=7-c=e-mf=2-ne=1000)', acc]
+            info = [flag_vals["-f"], flag_vals["-l"], flag_vals["-w"], algorithm, acc]
             entry = ""
             for inf in info:
                 entry += str(inf) + ","
             entry = entry[:-1] + "\n"
-            with open("./components/files/results.csv", "a") as file:
+            with open(path + "results.csv", "a") as file:
                 file.write(entry)
 
         print(f"Average over {n_folds} folds: {acc}" )
 
     elif mode == "predict": 
-
-        testing = tr_data[pd.isnull(tr_data.category)].drop("category", axis=1)
+        # Set all labelled transactions as the training set, and all unlabelled as the test set
+        testing = tr_data[pd.isnull(tr_data.category)]
         training = tr_data[~pd.isna(tr_data.category)]
 
         if len(testing) == 0:
             print("All transactions have accurate labels, nothing to predict")
             exit()
 
-        # Join Webscraping
-        results = pd.read_csv(path + "google.csv")
-
-        googled = testing.merge(results, how="left", on="desc_features", validate="many_to_one")
-        ungoogled = googled[pd.isna(googled.google)]
-        if len(ungoogled) > 0:
-            # Scrape any descriptions that haven't been googled before.
-            ungoogled = ungoogled[["desc_features"]].drop_duplicates()
-            ungoogled["google"] = [google(query) for query in ungoogled.desc_features]
-            ungoogled.to_csv(path + "google.csv", mode = 'a', header = False, index=False)
-
-            results = pd.read_csv(path + "google.csv")
-            googled = tr_data.merge(results, how="left", on="desc_features", validate="many_to_one")
-            assert len(googled[pd.isna(googled.google)]) == 0
-        
-        google_preds = [categorise(goog, verbose=False) for goog in googled.google]
+        # Get Webscraping
+        google_preds = get_webscrape(testing, path)
 
         # Join from lookup table
-
-        table = pd.DataFrame(training[["desc_features", "category"]].groupby(["desc_features"])["category"].unique().apply(','.join))
-        table = table.reset_index()
-        table = table[~table.category.str.contains(",")]
-
-        lookup_preds = np.array(testing.merge(table, on="desc_features", how="left", validate="many_to_one").category, dtype=object)
+        lookup_preds = get_lookup(training, testing)
 
         # Train model
-
         corpora = get_corpora(training)
-
         X_train = NLP_distances(training, corpora)
         y_train = X_train.category
         X_train = X_train.drop('category', axis=1)
         
-
-        X_test = NLP_distances(testing, corpora)
+        X_test = NLP_distances(testing, corpora).drop('category', axis=1)
 
         model.fit(X_train, y_train)
         model_preds = model.predict(X_test)
@@ -210,21 +212,25 @@ if __name__ == "__main__":
         X_test['google_preds'] = google_preds
         X_test['lookup_preds'] = lookup_preds
 
+        # Prioritise the lookup values over the google values
         corrections = [look if str(look) != "nan" else goog for goog, look in zip(google_preds, lookup_preds)]
 
+        # Take correction if present, else go with model pick
         X_test['pred_category'] = [corr if str(corr) != "nan" else mod for corr, mod in zip(corrections, model_preds)]
 
+        # Don't bother reviewing a label that has been found through lookup or google
         X_test['certain'] = [True if str(goog) != "nan" or str(look) != "nan" else False for goog, look in zip(google_preds, lookup_preds)]
 
         print(f"{sum(X_test.certain)/len(X_test.certain)*100}% of predictions are certain.\n")
         
-
+        # Merge categories back on raw data
         X_test = tr_data.merge(X_test, left_index=True, right_index=True, how="inner")
         X_test = X_test[["date", "amount_x", "description", "pred_category", "certain"]]
 
         X_test.columns = ["date", "amount", "description", "pred_category", "certain"]
         certain = X_test[X_test.certain].drop("certain", axis=1)
         certain = certain[["date", "amount", "description", "pred_category"]]
+        # Add certain transactions to transactions_labelled.csv
         certain.to_csv(path + "transactions_labelled.csv", mode = 'a', header = False, index=False)
 
         while True:
@@ -278,6 +284,47 @@ if __name__ == "__main__":
                 continue
 
         uncertain.to_csv(path + "transactions_labelled.csv", mode = 'a', header = False, index=False)
+
+    elif mode == "autolabel":
+        unlabelled = tr_data[pd.isnull(tr_data.category)].drop("category", axis=1)
+
+        if len(unlabelled) == 0:
+            print("All transactions have accurate labels, nothing to predict")
+            exit()
+
+        # Get Webscraping categorisations
+        google_preds = get_webscrape(unlabelled, path)
+
+        # Get hard-coded description categorisations
+        desc_preds = [categorise(desc, verbose=False) for desc in unlabelled.desc_features]
+        
+        auto_preds = [desc if str(desc) != "nan" else goog for desc, goog in zip(desc_preds, google_preds)]
+
+        if np.all(pd.isna(auto_preds)):
+            print('Already found all the possible labels, try "predict" mode to label the rest')
+            exit()
+
+        unlabelled['category'] = auto_preds
+        labelled = unlabelled[[True if str(cat) != "nan" else False for cat in unlabelled.category]]
+
+        tr_labelled = tr_data.merge(labelled, left_index=True, right_index=True, how="inner")
+
+        tr_labelled = tr_labelled[["amount_x", "desc_features_x", "category_y"]]
+
+        tr_labelled.columns = ["round_amount", "clean_desc", "category"]
+
+        # Define rounding function for labels join
+        def round_abs_up(num, base):
+            sign = np.sign(num)
+            result = np.ceil(abs(num)/base)*base
+            return sign*result
+        
+        tr_labelled.round_amount = [round_abs_up(am, 5) for am in tr_labelled.round_amount]
+        tr_labelled = tr_labelled.drop_duplicates()
+
+        tr_labelled.to_csv(path + "labels.csv", mode = 'a', header = False, index=False)
+
+
 
 
 

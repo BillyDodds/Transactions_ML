@@ -9,13 +9,8 @@ import nltk # type: ignore
 nltk.download('averaged_perceptron_tagger', quiet=True)
 nltk.download('stopwords', quiet=True)
 
-
 from components.scripts.scraper import google, categorise 
-
 from components.scripts.my_exceptions import InvalidDataFrameFormat # type: ignore
-
-
-
 
 ### NLP ###
 
@@ -76,8 +71,6 @@ def get_corpora(training:pd.DataFrame, min_freq=0) -> Dict[str, List[str]]:
                 features.append(word)
         global_corpora[cat] = features
 
-    
-    
     # disjoint_global_corpora:Dict[str, List[str]] = {}
     # for cat, features in global_corpora.items():
     #     disjoint_features = list(set(features) - set(intersect))
@@ -86,6 +79,7 @@ def get_corpora(training:pd.DataFrame, min_freq=0) -> Dict[str, List[str]]:
     # file = open("administration/corpus.json", "w")
     # json.dump(global_corpus, file)
     # file.close()
+
     return global_corpora
 
 # Determine the distance measure that will determine how close a description's features are to the corpus of each class
@@ -130,26 +124,64 @@ def scale(data:pd.DataFrame, scaler:StandardScaler) -> pd.DataFrame:
     return norm_data
 
 
+## Lookup functionality ##
+
+def get_lookup(X_train:pd.DataFrame, X_test:pd.DataFrame) -> np.array:
+    table = pd.DataFrame(X_train[["desc_features", "category"]].groupby(["desc_features"])["category"].unique().apply(','.join))
+    table = table.reset_index()
+    table = table[~table.category.str.contains(",")]
+    lookup_predictions = np.array(X_test.drop("category", axis=1).merge(table, on="desc_features", how="left", validate="many_to_one").category, dtype=object)
+    return lookup_predictions
+
+
+## Webscrape functionality ##
+
+def get_webscrape(testing:pd.DataFrame, path:str) -> np.array:
+    # Join Webscraping
+    results = pd.read_csv(path + "google.csv")
+
+    googled = testing.merge(results, how="left", on="desc_features", validate="many_to_one")
+    ungoogled = googled[pd.isna(googled.google)]
+    if len(ungoogled) > 0:
+        # Scrape any descriptions that haven't been googled before.
+        ungoogled = ungoogled[["desc_features"]].drop_duplicates()
+        ungoogled["google"] = [google(query) for query in ungoogled.desc_features]
+
+        # Record their results in the google.csv file
+        ungoogled.to_csv(path + "google.csv", mode = 'a', header = False, index=False)
+
+        # Join webscraping as before
+        results = pd.read_csv(path + "google.csv")
+        googled = testing.merge(results, how="left", on="desc_features", validate="many_to_one")
+
+        # Assert that there is nothing left ungoogled
+        assert len(googled[pd.isna(googled.google)]) == 0
+
+    # Categorise 
+    google_preds = np.array([categorise(goog, verbose=False) for goog in googled.google])
+    return google_preds
+
+
 ## Multiprocessing ##
 
-
-def run_fold(X:pd.DataFrame, split:Tuple[np.array, np.array], model:Any, web_scrape=False, lookup=False, verbose=True, min_freq=0) -> float:
+def run_fold(
+    X:pd.DataFrame, split:Tuple[np.array, np.array], model:Any, path:str,
+    web_scrape=False, lookup=False, verbose=True, min_freq=0
+) -> float:
+    
     train_index, test_index = split
     X_train, X_test = X.iloc[train_index], X.iloc[test_index]
     y_train, y_test = X_train.category, X_test.category
 
     # Web Scraping:
     if web_scrape:
-        goog = [google(query, verbose) for query in X_test.desc_features]
-        web_predictions = np.array([categorise(goo, verbose) for goo in goog], dtype=object)
+        web_predictions = get_webscrape(X_test, path)
     
     if lookup:
-        table = pd.DataFrame(X_train[["desc_features", "category"]].groupby(["desc_features"])["category"].unique().apply(','.join))
-        table = table.reset_index()
-        table = table[~table.category.str.contains(",")]
-        lookup_predictions = np.array(X_test.drop("category", axis=1).merge(table, on="desc_features", how="left", validate="many_to_one").category, dtype=object)
-
+        lookup_predictions = get_lookup(X_train, X_test)
+        
     corpus = get_corpora(X_train, min_freq=min_freq)
+
     X_train = NLP_distances(X_train.drop('category', axis=1), corpus)
     X_test = NLP_distances(X_test.drop('category', axis=1), corpus)
 
@@ -157,28 +189,26 @@ def run_fold(X:pd.DataFrame, split:Tuple[np.array, np.array], model:Any, web_scr
     scaler.fit(X_train)
     X_train = scale(X_train, scaler)
     X_test = scale(X_test, scaler)
-    
 
     model.fit(X_train, y_train)
     model_predictions = model.predict(X_test)
     predictions = model_predictions
     
-
     if web_scrape or lookup:
         print("model: ", predictions, type(predictions)) if verbose else None
         if web_scrape:
             print("web: ", web_predictions, type(web_predictions)) if verbose else None
-            predictions = np.array([web if web != "" else mod for web, mod in zip(web_predictions, predictions)])
+            predictions = np.array([web if str(web) != "nan" else mod for web, mod in zip(web_predictions, predictions)])
         if lookup:
             print("lookup: ", lookup_predictions, type(lookup_predictions)) if verbose else None
             predictions = np.array([look if str(look) != 'nan' else pred for look, pred in zip(lookup_predictions, predictions)])
         corrections = np.array([1 if pred!=mod else 0 for pred, mod in zip(predictions, model_predictions)])
-
         baseline = np.array([1 if str(look) != 'nan' else 0 for look in lookup_predictions])
 
-    print("predictions: ", predictions) if verbose else None
-    print("actual: ", np.array(y_test)) if verbose else None
-    print("matches: ", predictions == np.array(y_test)) if verbose else None
+    if verbose:
+        print("predictions: ", predictions)
+        print("actual: ", np.array(y_test))
+        print("matches: ", predictions == np.array(y_test))
 
     acc = sum(predictions == y_test)/len(predictions)
 

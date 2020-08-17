@@ -29,12 +29,11 @@ def google(query:str, verbose=True) -> str:
         return "-"
 
 def categorise(goog:str, verbose=True) -> Union[str, None]:
-
     shopping = ["market", "store", "shop"]
-    food = ["restaurant", "cafe", "bakery", "takeaway", "food", "coffee", "chicken"]
+    food = ["restaurant", "cafe", "bakery", "takeaway", "food", "coffee", "chicken", "bistro"]
     beers = ["bar", "pub", "hotel"]
-    health = ["dentist", "physiotherapist", "drug", "pharmacy", "pharmacist"]
-    transport = ["traffic", "parking", "carpark"] # + ["petrol", "gas"]
+    health = ["dentist", "dental", "physiotherapist", "physiotherapy", "drug", "pharma"]
+    transport = ["traffic", "parking", "carpark", " car ", ] # + ["petrol", "gas"]
 
     if goog == "":
         return np.NaN

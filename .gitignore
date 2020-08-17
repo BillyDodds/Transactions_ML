@@ -1,7 +1,9 @@
 tutoring/
 components/private_files
+components/test_files
 **/__pycache__/
 **/.mypy_cache/
 **/.ipynb_checkpoints/
 *.vec
 **/.DS_Store
+debug.ipynb
