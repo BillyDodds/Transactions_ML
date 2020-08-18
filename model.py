@@ -12,7 +12,7 @@ from sklearn.multiclass import OneVsRestClassifier, OneVsOneClassifier
 from sklearn.neural_network import MLPClassifier
 
 ## My Functions ##
-from components.scripts.load_data import load_data # type: ignore
+from components.scripts.load_data import load_data, round_abs_up # type: ignore
 from components.scripts.MyDecisionTree import MyDecisionTree # type: ignore
 from components.scripts.process_data import get_corpora, NLP_distances, run_fold, get_lookup, get_webscrape
 from components.scripts.scraper import categorise # type: ignore
@@ -121,7 +121,7 @@ if __name__ == "__main__":
     else:
         path = "./components/files/"
     
-    # path = "./components/test_files/"
+    path = "./components/test_files/"
 
     ### Load in data ###
     tr_data = load_data(path)
@@ -189,7 +189,7 @@ if __name__ == "__main__":
         if len(testing) == 0:
             print("All transactions have accurate labels, nothing to predict")
             exit()
-
+        
         # Get Webscraping
         google_preds = get_webscrape(testing, path)
 
@@ -218,72 +218,85 @@ if __name__ == "__main__":
         # Take correction if present, else go with model pick
         X_test['pred_category'] = [corr if str(corr) != "nan" else mod for corr, mod in zip(corrections, model_preds)]
 
+
         # Don't bother reviewing a label that has been found through lookup or google
         X_test['certain'] = [True if str(goog) != "nan" or str(look) != "nan" else False for goog, look in zip(google_preds, lookup_preds)]
 
         print(f"{sum(X_test.certain)/len(X_test.certain)*100}% of predictions are certain.\n")
         
         # Merge categories back on raw data
-        X_test = tr_data.merge(X_test, left_index=True, right_index=True, how="inner")
-        X_test = X_test[["date", "amount_x", "description", "pred_category", "certain"]]
+        X_test = tr_data.merge(X_test, left_index=True, right_index=True, how="inner").drop("category", axis=1)
+        X_test = X_test.rename(columns={'amount_x':'amount', 'pred_category':'category', 'weekday_x':'weekday'})
 
-        X_test.columns = ["date", "amount", "description", "pred_category", "certain"]
-        certain = X_test[X_test.certain].drop("certain", axis=1)
-        certain = certain[["date", "amount", "description", "pred_category"]]
+
         # Add certain transactions to transactions_labelled.csv
-        certain.to_csv(path + "transactions_labelled.csv", mode = 'a', header = False, index=False)
+        new_labs = X_test[X_test.certain]
+        new_labs["round_amount"] = [round_abs_up(am, 5) for am in new_labs.amount]
+        new_labs = new_labs[["round_amount", "desc_features", "category"]].drop_duplicates()
 
-        while True:
-            uncertain = X_test[~X_test.certain].drop("certain", axis=1)
-
-            print(f"There are {len(uncertain)} transactions to approve:")
-
-            classes = {1:'beers', 2:'food', 3:'life/wellbeing', 4:'shopping', 5:'transfer', 6:'transport', 7:'wages'}
-
-            instr = "\n[↵] accept\t"
-            for key, value in classes.items():
-                instr = instr + f"[{key}] {value}\t"
-
-            instr += "\n"
-
-            changes = []
-            for i in range(len(uncertain)):
-                print("-"*130)
-                print(f"{i+1} of {len(uncertain)}")
-                print(instr)
-                print(uncertain.iloc[[i], :], "\n")
-                while True:
-                    inp = input("Correct class: ")
-                    if inp == "":
-                        break
-                    try:
-                        int(inp)
-                    except ValueError:
-                        print(f"Input must be a number (the things in square brackets, ding dong). Try again")
-                        continue
-                    if int(inp) in classes.keys():
-                        break
-                    else:
-                        print(f"Input must be a valid number (1-7, or blank if you back my model). Try again")
-                        continue
-                changes.append(inp)
-
-            corrections = [classes[int(change)] if change != "" else pred for change, pred in zip(changes, uncertain.pred_category) ]
+        new_labs.to_csv(path + "labels.csv", mode = 'a', header = False, index=False)
 
 
-            uncertain["category"] = corrections
-            uncertain = uncertain.drop("pred_category", axis=1)
+        # Define instructions
+        classes = {1:'beers', 2:'food', 3:'life/wellbeing', 4:'shopping', 5:'transfer', 6:'transport', 7:'wages'}
+        instr = "\n[↵] accept\t"
+        for key, value in classes.items():
+            instr = instr + f"[{key}] {value}\t"
+        instr += "\n"
 
+        uncertain = X_test[~X_test.certain]
+        certain = pd.DataFrame(columns=uncertain.columns)
+        while len(uncertain)>0:
+            target_row = uncertain.head(1)
+            target_row_index = list(target_row.index)[0]
+            print("-"*130)
+            print(f"{len(uncertain)} to go")
+            print(instr)
+            print(target_row[["category", "description", "amount", "date"]], "\n")
+            while True:
+                inp = input("Correct class: ")
+                if inp == "":
+                    break
+                try:
+                    int(inp)
+                except ValueError:
+                    print(f"Input must be a number (the things in square brackets). Try again")
+                    continue
+                if int(inp) in classes.keys():
+                    break
+                else:
+                    print(f"Input must be a valid number (1-7, or blank if you back my model). Try again")
+                    continue
 
-            print("Confirm labels? [y/n]:")
-            print(uncertain)
-            if input("Confirm labels? [y/n]: ") == "y":
-                break
+            if inp != "":
+                uncertain.at[target_row_index, "category"] = classes[int(inp)]
+            uncertain.at[target_row_index, "certain"] = True
+
+            certain = certain.append(uncertain[uncertain.certain])
+            
+
+            uncertain = uncertain[~uncertain.certain]
+            new_lookups = get_lookup(certain, uncertain)
+            uncertain.category = [new if str(new) != "nan" else model for new, model in zip(new_lookups, uncertain.category)] 
+            uncertain.certain = [True if str(new) != "nan" else False for new in new_lookups]
+
+            if sum(uncertain.certain) > 0:
+                print(f"Corrected {sum(uncertain.certain)+1} transactions!")
             else:
-                print("Restarting confirmation labelling")
-                continue
+                print("Corrected 1 transaction.")
 
-        uncertain.to_csv(path + "transactions_labelled.csv", mode = 'a', header = False, index=False)
+            certain = certain.append(uncertain[uncertain.certain]).sort_index()
+            uncertain = uncertain[~uncertain.certain]
+
+        certain["round_amount"] = [round_abs_up(am, 5) for am in certain.amount]
+        certain = certain[["round_amount", "desc_features", "category"]].drop_duplicates()
+
+        print("Success! The following will be added to labels.csv for future modelling")
+        print(certain)
+
+        certain.to_csv(path + "labels.csv", mode = 'a', header = False, index=False)
+
+        # uncertain.to_csv(path + "transactions_labelled.csv", mode = 'a', header = False, index=False)
 
     elif mode == "autolabel":
         unlabelled = tr_data[pd.isnull(tr_data.category)].drop("category", axis=1)
@@ -312,12 +325,6 @@ if __name__ == "__main__":
         tr_labelled = tr_labelled[["amount_x", "desc_features_x", "category_y"]]
 
         tr_labelled.columns = ["round_amount", "clean_desc", "category"]
-
-        # Define rounding function for labels join
-        def round_abs_up(num, base):
-            sign = np.sign(num)
-            result = np.ceil(abs(num)/base)*base
-            return sign*result
         
         tr_labelled.round_amount = [round_abs_up(am, 5) for am in tr_labelled.round_amount]
         tr_labelled = tr_labelled.drop_duplicates()
