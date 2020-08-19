@@ -1,9 +1,12 @@
+import multiprocessing
+
 import pandas as pd # type: ignore
 import numpy as np # type: ignore
 import re
 from typing import Dict, List, Any, Tuple, Callable
 
 from sklearn.preprocessing import StandardScaler # type: ignore
+from sklearn.model_selection import KFold # type: ignore
 
 import nltk # type: ignore
 nltk.download('averaged_perceptron_tagger', quiet=True)
@@ -11,6 +14,7 @@ nltk.download('stopwords', quiet=True)
 
 from components.scripts.scraper import google, categorise 
 from components.scripts.my_exceptions import InvalidDataFrameFormat # type: ignore
+
 
 ### NLP ###
 
@@ -136,16 +140,42 @@ def get_lookup(X_train:pd.DataFrame, X_test:pd.DataFrame) -> np.array:
 
 ## Webscrape functionality ##
 
-def get_webscrape(testing:pd.DataFrame, path:str) -> np.array:
+def google_mp(features):
+    print("trying")
+    if isinstance(features, str):
+        return [(features, google(features))]
+    else:
+        return [(query, google(query)) for query in features]
+
+def get_webscrape(testing:pd.DataFrame, path:str, slow=False) -> np.array:
     # Join Webscraping
-    results = pd.read_csv(path + "google.csv")
+    try:
+        results = pd.read_csv(path + "google.csv")
+    except FileNotFoundError:
+        results = pd.DataFrame(columns=["desc_features", "google"])
+        results.to_csv(path + "google.csv", index=None)
 
     googled = testing.merge(results, how="left", on="desc_features", validate="many_to_one")
     ungoogled = googled[pd.isna(googled.google)]
     if len(ungoogled) > 0:
         # Scrape any descriptions that haven't been googled before.
-        ungoogled = ungoogled[["desc_features"]].drop_duplicates()
-        ungoogled["google"] = [google(query) for query in ungoogled.desc_features]
+        queries = list(ungoogled[["desc_features"]].drop_duplicates().desc_features)
+        
+        mp_results = []
+        def mp_callback(result):
+            mp_results.extend(result)
+
+        pool = multiprocessing.Pool(multiprocessing.cpu_count() - 1)
+        for features in np.array_split(queries, multiprocessing.cpu_count() - 1): 
+            pool.apply_async(
+                google_mp, 
+                args=(features), 
+                callback=mp_callback
+            )
+        pool.close()
+        pool.join()
+        desc_features, google_results = list(zip(*mp_results))
+        ungoogled = pd.DataFrame({"desc_features":desc_features, "google":google_results})
 
         # Record their results in the google.csv file
         ungoogled.to_csv(path + "google.csv", mode = 'a', header = False, index=False)
@@ -153,7 +183,6 @@ def get_webscrape(testing:pd.DataFrame, path:str) -> np.array:
         # Join webscraping as before
         results = pd.read_csv(path + "google.csv")
         googled = testing.merge(results, how="left", on="desc_features", validate="many_to_one")
-
         # Assert that there is nothing left ungoogled
         assert len(googled[pd.isna(googled.google)]) == 0
 

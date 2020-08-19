@@ -12,9 +12,10 @@ def google(query:str, verbose=True) -> str:
     soup = BeautifulSoup(req.text, "html.parser")
     bus = soup.find_all("span", class_="YhemCb")  # potential results for business
     comp = soup.find_all("div", class_="wwUB2c PZPZlf") # potential results for larger company
+    
     if len(bus) > 0:
         bus = str(bus[-1])
-        bus = bus.split(">")[1].split("<")[0]
+        bus = bus.split("<span>")[1].split("<")[0]
         if " in " in bus:
             bus = bus.split(" in ")[0]
         print("✅ query: " + query, "result: " + bus) if verbose else None
