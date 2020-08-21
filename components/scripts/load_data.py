@@ -96,7 +96,6 @@ def load_data(path:str) -> pd.DataFrame:
         data_labs = data_labs.drop(["category_x", "category_y", "clean_desc", "round_amount"], axis=1)
 
     except FileNotFoundError:
-        print(f'No "labels.csv" file found in "{path}". Ignore if using "autolabel" mode.')
         data_labs = data
         data_labs.description = data_labs.description.str.strip()
         data_labs.description = data_labs.description.str.lower()

@@ -1,4 +1,4 @@
-import multiprocessing
+import multiprocessing as mp
 
 import pandas as pd # type: ignore
 import numpy as np # type: ignore
@@ -159,23 +159,14 @@ def get_webscrape(testing:pd.DataFrame, path:str, slow=False) -> np.array:
     ungoogled = googled[pd.isna(googled.google)]
     if len(ungoogled) > 0:
         # Scrape any descriptions that haven't been googled before.
-        queries = list(ungoogled[["desc_features"]].drop_duplicates().desc_features)
-        
-        mp_results = []
-        def mp_callback(result):
-            mp_results.extend(result)
-
-        pool = multiprocessing.Pool(multiprocessing.cpu_count() - 1)
-        for features in np.array_split(queries, multiprocessing.cpu_count() - 1): 
-            pool.apply_async(
-                google_mp, 
-                args=(features), 
-                callback=mp_callback
-            )
+        ungoogled = ungoogled[["desc_features"]].drop_duplicates()
+        queries = ungoogled.desc_features
+        pool = mp.Pool(mp.cpu_count() - 1)
+        google_results = pool.map(google, queries)
         pool.close()
         pool.join()
-        desc_features, google_results = list(zip(*mp_results))
-        ungoogled = pd.DataFrame({"desc_features":desc_features, "google":google_results})
+
+        ungoogled = pd.DataFrame({"desc_features":queries, "google":google_results})
 
         # Record their results in the google.csv file
         ungoogled.to_csv(path + "google.csv", mode = 'a', header = False, index=False)
