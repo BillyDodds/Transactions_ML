@@ -319,7 +319,7 @@ data_labs.drop("description", axis=1) # Not showing description for privacy reas
 
 # 2. Feature Extraction
 
-## 2.1 Weekday
+## 2.1 Quick Features
 
 *Code cell for this sub-section is a modified extract from `components/scripts/load_data.py`*
 
