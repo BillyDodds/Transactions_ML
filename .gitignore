@@ -7,3 +7,4 @@ components/test_files
 *.vec
 **/.DS_Store
 debug.ipynb
+notebooks/

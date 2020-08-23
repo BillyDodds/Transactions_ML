@@ -78,6 +78,46 @@ To run the model using the demo files provided in `components/demo_files`, run t
 
 Run `$python model.py help` to show this information.
 
+# Report Table of Contents
+
+- [Project Overview](#project-overview)
+  - [Aim](#aim)
+  - [Instructions for Use](#instructions-for-use)
+    - [First Time Use](#first-time-use)
+    - [General Use](#general-use)
+    - [Use With Demo Files](#use-with-demo-files)
+    - [Models and Flags](#models-and-flags)
+- [Report Table of Contents](#report-table-of-contents)
+- [0. Dependencies](#0-dependencies)
+- [1. Load in the data](#1-load-in-the-data)
+  - [1.1 Load and Join Labels](#11-load-and-join-labels)
+  - [1.2 Scrape "Value Date" from Descriptions](#12-scrape-value-date-from-descriptions)
+- [2. Feature Extraction](#2-feature-extraction)
+  - [2.1 Quick Features](#21-quick-features)
+  - [2.2 Natural Language Processing](#22-natural-language-processing)
+    - [2.2.0 Overview](#220-overview)
+    - [2.2.1 Cleaning The Descriptions](#221-cleaning-the-descriptions)
+      - [Blacklist](#blacklist)
+      - [Cleaning](#cleaning)
+    - [2.2.2 Collecting Each Class Corpus](#222-collecting-each-class-corpus)
+      - [N-Grams (aka "The Chop")](#n-grams-aka-the-chop)
+      - [Extracting the Candidates to Build Each Class Corpus](#extracting-the-candidates-to-build-each-class-corpus)
+      - [Vowel Removal](#vowel-removal)
+      - [Collecting Candidates](#collecting-candidates)
+      - [Creating Each Class Corpus](#creating-each-class-corpus)
+    - [2.2.3 Quantitatively Determine the "Likeness" of Each Description to Each Class Corpus](#223-quantitatively-determine-the-likeness-of-each-description-to-each-class-corpus)
+- [3. Scaling](#3-scaling)
+- [4. Implementing a "Lookup" functionality](#4-implementing-a-lookup-functionality)
+- [5. Implementing a "Webscrape" functionality](#5-implementing-a-webscrape-functionality)
+  - [5.1 Scraping Results](#51-scraping-results)
+  - [5.2 Categorising Results](#52-categorising-results)
+  - [5.3 Optimisation and Implementation](#53-optimisation-and-implementation)
+- [6. Evaluating the Model](#6-evaluating-the-model)
+  - [6.1 Implementing the Validation Function](#61-implementing-the-validation-function)
+  - [6.2 Performing k-Fold Cross Validation](#62-performing-k-fold-cross-validation)
+  - [6.3 Using Multiprocessing for Cross-Validation](#63-using-multiprocessing-for-cross-validation)
+
+
 # 0. Dependencies
 
 
@@ -970,7 +1010,7 @@ def get_lookup(X_train:pd.DataFrame, X_test:pd.DataFrame) -> np.array:
 ## 5.1 Scraping Results
 The next idea I had to improve the accuracy of my model is to abuse Google's suggestions sidebar. When you google something like a restaurant, most of the time Google will give you a side-bar showcasing the business that it thinks best suits your search query. The side-bar has an html element which gives the business a category. For example, when I google "McDonald Gladesville" (the least creative example I could think of), Google tells me that this is a fast food restaurant. 
 
-<img src="notebooks/google_sidebar_example.png">
+<img src="figures/google_sidebar_example.png">
 
 Thankfully, it turns out that the class of this HTML element is always labelled "YhemCb", meaning we can easily scrape it with BeautifulSoup, retrieving the HTML element:
 
