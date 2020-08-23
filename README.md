@@ -160,13 +160,6 @@ data_labs.category.value_counts().plot(kind='bar')
 ```
 
 
-
-
-    <matplotlib.axes._subplots.AxesSubplot at 0x135932580>
-
-
-
-
 ![svg](figures/output_6_1.svg)
 
 
@@ -332,6 +325,8 @@ data_labs.drop("description", axis=1) # Not showing description for privacy reas
 
 Next, I wanted to pull out some interesting features. I figured whether the transaction occurred on a weekend would be telling. Initially I was going to just use a boolean isWeekend column marking when the weekday was 4, 5 or 6 (friday, saturday or sunday), but then I thought to let the models determine a cut off naturally, leaving the weekday as an integer.
 
+Whether the entry was rounded to 50 or 10 could also be useful in differentiating a natural price from a shopping transaction to an artificially "nice" number that is usually characteristic of transfers.
+
 
 ```python
 tr_data = data_labs.drop(["date", "value_date"], axis=1)
@@ -339,6 +334,9 @@ tr_data.columns = ["amount", "description", "category", "date"]
 # tr_data["weekend"] = [True if day >= 4 else False for day in tr_data.weekday]
 # tr_data = tr_data.drop("weekday", axis=1)
 tr_data["weekday"] = tr_data.date.dt.weekday
+tr_data["is_rounded_10"] = tr_data.amount % 10 == 0
+tr_data["is_rounded_50"] = tr_data.amount % 50 == 0
+tr_data["is_credit"] = tr_data.amount > 0
 tr_data.drop("description", axis=1)
 
 ```
@@ -355,6 +353,9 @@ tr_data.drop("description", axis=1)
       <th>category</th>
       <th>date</th>
       <th>weekday</th>
+      <th>is_rounded_10</th>
+      <th>is_rounded_50</th>
+      <th>is_credit</th>
     </tr>
   </thead>
   <tbody>
@@ -364,6 +365,9 @@ tr_data.drop("description", axis=1)
       <td>wages</td>
       <td>2020-07-27</td>
       <td>0</td>
+      <td>True</td>
+      <td>True</td>
+      <td>True</td>
     </tr>
     <tr>
       <th>1</th>
@@ -371,6 +375,9 @@ tr_data.drop("description", axis=1)
       <td>food</td>
       <td>2020-07-27</td>
       <td>0</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
     </tr>
     <tr>
       <th>2</th>
@@ -378,6 +385,9 @@ tr_data.drop("description", axis=1)
       <td>food</td>
       <td>2020-07-27</td>
       <td>0</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
     </tr>
     <tr>
       <th>3</th>
@@ -385,6 +395,9 @@ tr_data.drop("description", axis=1)
       <td>wages</td>
       <td>2020-07-26</td>
       <td>6</td>
+      <td>True</td>
+      <td>True</td>
+      <td>True</td>
     </tr>
     <tr>
       <th>4</th>
@@ -392,9 +405,15 @@ tr_data.drop("description", axis=1)
       <td>food</td>
       <td>2020-07-25</td>
       <td>5</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
     </tr>
     <tr>
       <th>...</th>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
       <td>...</td>
       <td>...</td>
       <td>...</td>
@@ -406,6 +425,9 @@ tr_data.drop("description", axis=1)
       <td>beers</td>
       <td>2019-09-11</td>
       <td>2</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
     </tr>
     <tr>
       <th>596</th>
@@ -413,6 +435,9 @@ tr_data.drop("description", axis=1)
       <td>food</td>
       <td>2019-09-09</td>
       <td>0</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
     </tr>
     <tr>
       <th>597</th>
@@ -420,6 +445,9 @@ tr_data.drop("description", axis=1)
       <td>beers</td>
       <td>2019-09-06</td>
       <td>4</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
     </tr>
     <tr>
       <th>598</th>
@@ -427,6 +455,9 @@ tr_data.drop("description", axis=1)
       <td>food</td>
       <td>2019-09-09</td>
       <td>0</td>
+      <td>False</td>
+      <td>False</td>
+      <td>True</td>
     </tr>
     <tr>
       <th>599</th>
@@ -434,10 +465,13 @@ tr_data.drop("description", axis=1)
       <td>food</td>
       <td>2019-09-11</td>
       <td>2</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
     </tr>
   </tbody>
 </table>
-<p>600 rows × 4 columns</p>
+<p>600 rows × 7 columns</p>
 </div>
 
 
@@ -587,6 +621,9 @@ tr_data.iloc[[1]]
       <th>category</th>
       <th>date</th>
       <th>weekday</th>
+      <th>is_rounded_10</th>
+      <th>is_rounded_50</th>
+      <th>is_credit</th>
       <th>desc_features</th>
       <th>desc_corpus</th>
     </tr>
@@ -599,6 +636,9 @@ tr_data.iloc[[1]]
       <td>food</td>
       <td>2020-07-27</td>
       <td>0</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
       <td>mcdonalds gladesville</td>
       <td>mcdonalds mcdonald mcdonal mcdona mcdon mcdo m...</td>
     </tr>
@@ -699,6 +739,9 @@ labelled_data
       <th>amount</th>
       <th>category</th>
       <th>weekday</th>
+      <th>is_rounded_10</th>
+      <th>is_rounded_50</th>
+      <th>is_credit</th>
       <th>wages_desc_dist</th>
       <th>food_desc_dist</th>
       <th>transfer_desc_dist</th>
@@ -714,6 +757,9 @@ labelled_data
       <td>50.0</td>
       <td>wages</td>
       <td>0</td>
+      <td>True</td>
+      <td>True</td>
+      <td>True</td>
       <td>0.000000</td>
       <td>0.427579</td>
       <td>0.265741</td>
@@ -727,6 +773,9 @@ labelled_data
       <td>-4.8</td>
       <td>food</td>
       <td>0</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
       <td>0.449495</td>
       <td>0.000000</td>
       <td>0.422222</td>
@@ -740,6 +789,9 @@ labelled_data
       <td>-4.0</td>
       <td>food</td>
       <td>0</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
       <td>0.449495</td>
       <td>0.000000</td>
       <td>0.422222</td>
@@ -753,6 +805,9 @@ labelled_data
       <td>50.0</td>
       <td>wages</td>
       <td>6</td>
+      <td>True</td>
+      <td>True</td>
+      <td>True</td>
       <td>0.000000</td>
       <td>0.339286</td>
       <td>0.400000</td>
@@ -766,6 +821,9 @@ labelled_data
       <td>-14.5</td>
       <td>food</td>
       <td>5</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
       <td>0.357143</td>
       <td>0.000000</td>
       <td>0.342857</td>
@@ -786,12 +844,18 @@ labelled_data
       <td>...</td>
       <td>...</td>
       <td>...</td>
+      <td>...</td>
+      <td>...</td>
+      <td>...</td>
     </tr>
     <tr>
       <th>595</th>
       <td>-36.0</td>
       <td>beers</td>
       <td>2</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
       <td>0.352273</td>
       <td>0.166667</td>
       <td>0.500000</td>
@@ -805,6 +869,9 @@ labelled_data
       <td>-42.2</td>
       <td>food</td>
       <td>0</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
       <td>0.350000</td>
       <td>0.000000</td>
       <td>0.266667</td>
@@ -818,6 +885,9 @@ labelled_data
       <td>-13.0</td>
       <td>beers</td>
       <td>4</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
       <td>0.442857</td>
       <td>0.198571</td>
       <td>0.355238</td>
@@ -831,6 +901,9 @@ labelled_data
       <td>19.0</td>
       <td>food</td>
       <td>0</td>
+      <td>False</td>
+      <td>False</td>
+      <td>True</td>
       <td>0.369643</td>
       <td>0.000000</td>
       <td>0.200000</td>
@@ -844,6 +917,9 @@ labelled_data
       <td>-5.0</td>
       <td>food</td>
       <td>2</td>
+      <td>False</td>
+      <td>False</td>
+      <td>False</td>
       <td>0.522727</td>
       <td>0.000000</td>
       <td>0.500000</td>
@@ -854,7 +930,7 @@ labelled_data
     </tr>
   </tbody>
 </table>
-<p>600 rows × 10 columns</p>
+<p>600 rows × 13 columns</p>
 </div>
 
 
