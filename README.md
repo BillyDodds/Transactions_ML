@@ -1,33 +1,107 @@
+# Project Overview
+
+## Aim
+To develop a program that can read in bank transactions and sort them into meaningful categories using machine learning.
+
+## Instructions for Use
+### First Time Use
+This will be how the supervised learning process will be initialised, building the "labels.csv" file from scratch (as well as the "google.csv" file).
+
+1. Download bank transactions as a CSV file in the form "date, amount, description, balance" labelled **"CSVData.csv"**. Place file in a new directory `components/private_files`.
+
+
+2. Run the program using "autolabel" mode by running the command `$python model.py autolabel`. Warning: this will google the cleaned and stripped forms of your transaction descriptions (no numbers, dates etc., only words). If you are uncomfortable with this, skip this step.
+
+
+3. Run the program using "predict" mode by running the command `$python model.py predict <model> <flags>`. The recommended model is the Random Forest model, as that had the best performance in testing. Hence, I recommend running `$python model.py predict rf`. This mode will take you through the process of labelling all your transactions in an efficient manner, retraining the model every 10 corrections to improve predictions and hopefully make the experience less painful. 
+
+
+Once completed, you should have the "labels.csv" file in the `components/private_files` folder (and the "google.csv" file if you didn't skip step 2).
+
+### General Use
+The program has three main modes:
+
+1. Autolabel (`$python model.py autolabel`)
+    
+    This mode takes in your transactions from the "CSVData.csv" file, strips and cleans the descriptions and googles each description to find labels by abusing Google's sidebar suggestions panel (see Section 5.1 for more detail). It also does a naive lookup to label transactions by looking for key words in the descriptions (using the categorise function showcased in Section 5.2).
+    
+    Running this mode will create, or append to, the "labels.csv" and "google.csv" files.
+    
+
+2. Predict (`$python model.py predict <model> <flags>`)
+
+    This mode uses all previously labelled transactions to train a model to predict all unlabelled transactions in the CSVData.csv file.
+    
+    
+3. Evaluate (`$python model.py evaluate <model> <flags>`)
+    
+    This mode takes only labelled transactions and performs k-fold cross validation, returning the average accuracy over the k folds.
+    
+### Use With Demo Files
+    
+To run the model using the demo files provided in `components/demo_files`, run the desired command with the flag `-d` to switch the path from `components/private_files` to `components/demo_files`.
+    
+### Models and Flags
+
+
+<table>
+<tr><th>Models</th><th>Flags</th></tr>
+<tr><td>
+
+| Algorithm                            | Command   |
+|--------------------------------------|-----------|
+| decision tree                        | `dt`      |
+| my implementation of a decision tree | `mydt`    |
+| support vector machine               | `svm`     |
+| nearest neighbour                    | `nn`      |
+| random forest                        | `rf`      |
+| one vs. rest                         | `ovr`     |
+| one vs. one                          | `ovo`     |
+| multi-layer perceptron               | `mlp`     |
+
+</td><td>
+
+| Description                                                                   | Flag                |
+|-------------------------------------------------------------------------------|---------------------|
+| set number of CV folds (default 10)                                           | `-f=<n_folds>`      |
+| whether lookup is used                                                        | `-l`                |
+| whether webscraping is used                                                   | `-w`                |
+| verbose mode                                                                  | `-v`                |
+| slow mode (no parallel processing)                                            | `-s`                |
+| set file path to "components/demo_files" (default "components/private_files") | `-d`                |
+| set number of neighbours for nn algorithm (default 5)                         | `-n=<neighbours>`   |
+| record result in "/results.csv"                                               | `-r`                |
+
+</td></tr> </table>
+    
+    
+
+Run `$python model.py help` to show this information.
+
 # 0. Dependencies
 
 
 ```python
+import re
+from typing import Dict, List, Any, Tuple, Callable, Union
+
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-import seaborn as sns
+
 import nltk
-from nltk.tag import pos_tag
 from nltk.corpus import stopwords
-nltk.download('averaged_perceptron_tagger', quiet=True)
-nltk.download('punkt', quiet=True)
 nltk.download('stopwords', quiet=True)
 
-import re
-
 from sklearn.tree import DecisionTreeClassifier
-from sklearn.model_selection import train_test_split
 from sklearn.model_selection import StratifiedKFold
 from sklearn.preprocessing import StandardScaler
-from sklearn.svm import LinearSVC
-
-import multiprocess as mp
-
-from typing import Dict, List, Any, Tuple, Callable, Union
 
 ```
 
 # 1. Load in the data
+*All code cells in this section are modified extracts from `components/scripts/load_data.py`*
+
 ## 1.1 Load and Join Labels
 This code loads in my bank transactions which consists of a date, amount, description and account balance. Then, if the transaction appears in my labelled dataset, it adds its labelled class with a join. 
 
@@ -38,8 +112,7 @@ A transaction is considered the same if it has the same description and amount t
 # Set path
 path = "../components/private_files/"
 
-# Load in data
-
+# Load in transaction dat
 data = pd.read_csv(path + "CSVData.csv", header=None)
 data.columns = ["date", "amount", "description", "balance"]
 data['date']  = pd.to_datetime(data['date'], format='%d/%m/%Y')
@@ -47,17 +120,17 @@ data = data.drop("balance", axis=1)
 data = data.astype({'amount':'float'})
 
 # Load in labels and join to data
-
 labels = pd.read_csv(path + "transactions_labelled.csv")
 labels = labels.drop("date", axis=1)
 labels = labels.drop_duplicates()
-
 
 labels.description = labels.description.str.strip()
 labels.description = labels.description.str.lower()
 data.description = data.description.str.strip()
 data.description = data.description.str.lower()
 
+labels.amount = labels.amount.round(2)
+data.amount = data.amount.round(2)
 
 data_labs = data.merge(labels, on=["description", "amount"], how="left", validate="many_to_one")
 
@@ -68,18 +141,17 @@ data_labs.category.value_counts().plot(kind='bar')
 
 
 
-    <matplotlib.axes._subplots.AxesSubplot at 0x13d4c7430>
+    <matplotlib.axes._subplots.AxesSubplot at 0x1357be220>
 
 
 
 
-![png](output_3_1.png)
+![svg](figures/output_5_1.svg)
 
 
 
 ```python
 # Merge some of the underrepresented labels
-
 data_labs.category = ["beers" if cat == "entertainment" else cat for cat in data_labs.category]
 data_labs.category = ["beers" if cat == "booze" else cat for cat in data_labs.category]
 data_labs.category = ["wages" if cat == "tutoring" else cat for cat in data_labs.category]
@@ -96,12 +168,12 @@ data_labs.category.value_counts().plot(kind='bar')
 
 
 
-    <matplotlib.axes._subplots.AxesSubplot at 0x13d5a5430>
+    <matplotlib.axes._subplots.AxesSubplot at 0x135932580>
 
 
 
 
-![png](output_4_1.png)
+![svg](figures/output_6_1.svg)
 
 
 This narrows down the categories to 7:
@@ -121,7 +193,6 @@ Hence, I had to do a little scraping to collect these value dates when they appe
 
 ```python
 # Scrape descriptions for "value date" (actual date of transaction)
-
 value_dates = []
 for desc in data_labs.description:
     if "value date: " in desc:
@@ -136,7 +207,6 @@ data_labs.value_date = pd.to_datetime(data_labs.value_date, format='%d/%m/%Y')
 
 # If there is no value date in the description, 
 # it is assumed that the date of the record is the date of the transaction.
-
 transaction_date = []
 for index, row in data_labs.iterrows():
     if pd.isnull(row.value_date):
@@ -276,6 +346,9 @@ data_labs.drop("description", axis=1) # Not showing description for privacy reas
 # 2. Feature Extraction
 
 ## 2.1 Weekday
+
+*Code cell for this sub-section is a modified extract from `components/scripts/load_data.py`*
+
 Next, I wanted to pull out some interesting features. I figured whether the transaction occurred on a weekend would be telling. Initially I was going to just use a boolean isWeekend column marking when the weekday was 4, 5 or 6 (friday, saturday or sunday), but then I thought to let the models determine a cut off naturally, leaving the weekday as an integer.
 
 
@@ -403,6 +476,8 @@ tr_data.drop("description", axis=1)
 
 ## 2.2 Natural Language Processing
 
+*Most code cells in this subsection are modified extracts from `components/scripts/process_data.py`, where the functional components are implemented in `components/scripts/load_data.py`.*
+
 ### 2.2.0 Overview
 
 Bank descriptions are limited to only a few characters. Hence, the text differs to most NLP texts in a few areas:
@@ -479,7 +554,7 @@ def clean_chop(string:str, blacklist:List[str]) -> str:
     for word in out.strip().split(" "):
         if word not in blacklist and len(word) > 1 and " " + word + " " not in corpus: # ensuring no duplicates
             wrd = word
-            while len(wrd) > 2:
+            while len(wrd) >= 3:
                 corpus += wrd + " "
                 wrd = wrd[0:-1]
     return corpus.strip()
@@ -490,33 +565,34 @@ A limitation to the approach above is that we in no way account for deliberate w
 
 
 ```python
-# def clean_chop_devowel(string):
-#     corpus = ""
-#     out = string
-#     if "value date: " in out:
-#         out = out.split("value date: ")[0]
-#     out = re.sub(r'([^a-z ]+)', " ", out) # remove non-alphabetic characters
-#     out = out.strip().split(" ")
-#     for word in out:
-#         if word not in blacklist and len(word) > 1 and " " + word + " " not in corpus: # ensuring no duplicates
-#             corpus += re.sub(r'([aeiou])+', "", word) + " " # Add devowelled word
-#             wrd = word
-#             while len(wrd) >= 3:
-#                 corpus += wrd + " "
-#                 wrd = wrd[0:-1]
-#     return corpus.strip()
+def clean_devowel(string):
+    features = ""
+    out = string
+    if "value date: " in out:
+        out = out.split("value date: ")[0]
+    out = re.sub(r'([^a-z ]+)', " ", out) # remove non-alphabetic characters
+    for word in out.strip().split(" "):
+        if word not in blacklist and len(word) > 1 and " " + word + " " not in features: # ensuring no duplicates
+            features += re.sub(r'([aeiou])+', "", word) + " " # Add devowelled word
+            features += word + " "
+    return features.strip()
 
-# def clean_devowel(string):
-#     features = ""
-#     out = string
-#     if "value date: " in out:
-#         out = out.split("value date: ")[0]
-#     out = re.sub(r'([^a-z ]+)', " ", out) # remove non-alphabetic characters
-#     for word in out.strip().split(" "):
-#         if word not in blacklist and len(word) > 1 and " " + word + " " not in features: # ensuring no duplicates
-#             features += re.sub(r'([aeiou])+', "", word) + " "
-#             features += word + " "
-#     return features.strip()
+def clean_chop_devowel(string):
+    corpus = ""
+    out = string
+    if "value date: " in out:
+        out = out.split("value date: ")[0]
+    out = re.sub(r'([^a-z ]+)', " ", out) # remove non-alphabetic characters
+    out = out.strip().split(" ")
+    for word in out:
+        if word not in blacklist and len(word) > 1 and " " + word + " " not in corpus: # ensuring no duplicates
+            corpus += re.sub(r'([aeiou])+', "", word) + " " # Add devowelled word
+            wrd = word
+            while len(wrd) >= 3:
+                corpus += wrd + " "
+                wrd = wrd[0:-1]
+    return corpus.strip()
+
 ```
 
 #### Collecting Candidates
@@ -583,11 +659,7 @@ Here, I define a get_corpus function that will collect the corpus of each class.
 
 ```python
 def get_corpora(training:pd.DataFrame, min_freq=0) -> Dict[str, List[str]]:
-    try:
-        assert set(["category", "desc_corpus"]).issubset(set(training.columns))
-    except:
-        raise InvalidDataFrameFormat(training, message="'category' and/or 'desc_corpus' columns not found. Could not extract corpora from dataframe.")
-
+    
     global_corpora:Dict[str, List[str]] = {}
     for cat in training.category.unique():
         corpus:Dict[str, int] = {}
@@ -608,8 +680,8 @@ def get_corpora(training:pd.DataFrame, min_freq=0) -> Dict[str, List[str]]:
             if count > min_freq:
                 features.append(word)
         global_corpora[cat] = features
+        
     return global_corpora
-
 
 ```
 
@@ -642,13 +714,7 @@ def desc_dist(corpus:List[str], desc:str, distance:Callable=distance) -> float:
     return np.mean(min_distances)           # Return the mean "best case" distance 
 
 
-def NLP_distances(dat:pd.DataFrame, corpus:Dict[str, List[str]], desc_dist:Callable=desc_dist) -> pd.DataFrame:
-    data=dat.copy()
-    try:
-        assert set(["description", "date", "desc_features", "desc_corpus"]).issubset(set(data.columns))
-    except:
-        raise InvalidDataFrameFormat(data, message='Missing some column(s) from the set: {"description", "date", "desc_features", "desc_corpus"}')
-
+def NLP_distances(data:pd.DataFrame, corpus:Dict[str, List[str]], desc_dist:Callable=desc_dist) -> pd.DataFrame:
     for cat, corp in corpus.items():
         data[cat + "_desc_dist"] = [desc_dist(corp, desc) for desc in data.desc_features]
     data = data.drop(["description", "date", "desc_features", "desc_corpus"], axis=1)
@@ -660,10 +726,9 @@ Using the above functions, we have the full set of features to train our model w
 
 
 ```python
-labelled_data = tr_data[~pd.isnull(tr_data.category)]
-
+# Make sure there are no uncategorised transactions for evaluation purposes
+labelled_data = tr_data[~pd.isnull(tr_data.category)] 
 labelled_data = NLP_distances(labelled_data, get_corpora(labelled_data))
-
 labelled_data
 
 ```
@@ -853,6 +918,8 @@ labelled_data
 
 
 # 3. Scaling
+*Extract from `components/scripts/process_data.py`*
+
 Some of the models I want to use (e.g. nearest neighbour) will require the data be scaled. Here, I create a function that will take in our scaler (which we will fit on the training data) and scale our dataframe.
 
 
@@ -871,7 +938,7 @@ Firstly, we ensure that we discount any training examples which have the same de
 
 
 ```python
-def get_lookup(X_train, X_test):
+def get_lookup(X_train:pd.DataFrame, X_test:pd.DataFrame) -> np.array:
     table = pd.DataFrame(X_train[["desc_features", "category"]].groupby(["desc_features"])["category"].unique().apply(','.join))
     table = table.reset_index()
     table = table[~table.category.str.contains(",")]
@@ -976,7 +1043,7 @@ To do this, I simply stored the search results for each transaction description 
 
 
 ```python
-def get_webscrape(testing):
+def get_webscrape(testing, path):
     # Join Webscraping
     results = pd.read_csv(path + "google.csv")
 
@@ -1012,14 +1079,18 @@ The following function evaluates the accuracy of a single fold, having both `web
 
 
 ```python
-def run_fold(X:pd.DataFrame, split:Tuple[np.array, np.array], model:Any, web_scrape=False, lookup=False, verbose=True, min_freq=0) -> float:
+def run_fold(
+    X:pd.DataFrame, split:Tuple[np.array, np.array], model:Any, path:str,
+    web_scrape=False, lookup=False, verbose=True, min_freq=0
+) -> float:
+    
     train_index, test_index = split
     X_train, X_test = X.iloc[train_index], X.iloc[test_index]
     y_train, y_test = X_train.category, X_test.category
 
     # Web Scraping:
     if web_scrape:
-        web_predictions = get_webscrape(X_test)
+        web_predictions = get_webscrape(X_test, path)
     
     if lookup:
         lookup_predictions = get_lookup(X_train, X_test)
@@ -1033,7 +1104,6 @@ def run_fold(X:pd.DataFrame, split:Tuple[np.array, np.array], model:Any, web_scr
     scaler.fit(X_train)
     X_train = scale(X_train, scaler)
     X_test = scale(X_test, scaler)
-    
 
     model.fit(X_train, y_train)
     model_predictions = model.predict(X_test)
@@ -1070,27 +1140,27 @@ def run_fold(X:pd.DataFrame, split:Tuple[np.array, np.array], model:Any, web_scr
 
 
 ```python
-n_folds = 10
-
-model = DecisionTreeClassifier()
-
 # Remove unknown transactions
 X = tr_data[~pd.isnull(tr_data.category)]
 
+# Set model
+model = DecisionTreeClassifier()
+
+# Define folds
+n_folds = 10
 splitter = StratifiedKFold(n_splits=n_folds, shuffle=True)
 folds = list(splitter.split(X.drop("category", axis=1), X.category))
 
 print(f"Performing {n_folds}-fold cross validation")
 
 accuracies = []
-
 upto = 1
 for fold in folds:
-    print(str(upto) + " of " + str(n_folds))
-    accuracies.append(run_fold(X, fold, model, web_scrape=True, lookup=True, verbose=False))
+    print(f"{upto} of {n_folds}")
+    accuracies.append(run_fold(X, fold, model, path, web_scrape=True, lookup=True, verbose=False))
     upto += 1
-
 acc = round(np.mean(accuracies),4)
+
 print(f"Average over {n_folds} folds: {acc}" )
 ```
 
@@ -1105,7 +1175,7 @@ print(f"Average over {n_folds} folds: {acc}" )
     8 of 10
     9 of 10
     10 of 10
-    Average over 10 folds: 0.87
+    Average over 10 folds: 0.8717
 
 
 ## 6.3 Using Multiprocessing for Cross-Validation
@@ -1113,16 +1183,20 @@ We have written the `run_fold` function in this way so that we can easily implem
 
 
 ```python
+import multiprocess as mp
 accuracies = []
-def record(acc):
-    accuracies.append(acc)
+def record(result):
+    accuracies.append(result)
 
 pool = mp.Pool(min(mp.cpu_count(), n_folds))
 for fold in folds:
-    pool.apply_async(run_fold, args=(X, fold, model, True, True, False), callback = record)
+    pool.apply_async(run_fold, args=(X, fold, model, path, True, True, False), callback = record)
 pool.close()
 pool.join()
+```
 
+
+```python
 acc = round(np.mean(accuracies),4)
 print(f"Average over {n_folds} folds: {acc}" )
 ```

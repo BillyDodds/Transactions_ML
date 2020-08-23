@@ -210,6 +210,8 @@ def run_fold(
     X_train = scale(X_train, scaler)
     X_test = scale(X_test, scaler)
 
+    print(f"Features: {list(X_train.columns)}" ) if verbose else None
+
     model.fit(X_train, y_train)
     model_predictions = model.predict(X_test)
     predictions = model_predictions

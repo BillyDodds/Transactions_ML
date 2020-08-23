@@ -29,6 +29,7 @@ python model.py <mode> <algorithm> <flags>
 MODES:
 evaluate        perform k-fold cross validation (default 10-fold)
 predict         use current labelled set of transactions to predict unlabelled transactions
+autolabel       use webscraping and lookups to label unlabelled transactions, if possible
 help            shows this message
 
 ALGORITHMS:
@@ -47,7 +48,7 @@ FLAGS:
 -w              whether webscraping is used
 -v              verbose mode
 -s              slow mode (no parallel processing)
--p              set file path to "components/private_files" (default "components/files")
+-d              set file path to "components/demo_files" (default "components/private_files")
 -n=<neighbours> set number of neighbours for nn algorithm (default 5)
 -r              record result in "<path>/results.csv"
 '''
@@ -71,7 +72,7 @@ defaults = {
      "-s":False,
      "-n":5,
      "-r":False,
-     "-p":False
+     "-d":False
 }
 
 
@@ -119,12 +120,11 @@ if __name__ == "__main__":
 
     # Set path for sensitive files
     path:str
-    if flag_vals["-p"]:
-        path = "./components/private_files/"
+    if flag_vals["-d"]:
+        path = "./components/demo_files/"
     else:
-        path = "./components/files/"
+        path = "./components/private_files/"
     
-    path = "./components/test_files/"
 
     ### Load in data ###
     tr_data = load_data(path)

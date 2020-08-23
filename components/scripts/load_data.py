@@ -135,8 +135,13 @@ def load_data(path:str) -> pd.DataFrame:
     tr_data.columns = ["amount", "description", "category", "date"]
 
 
-    # Add boolean value for whether the transaction was on the weekend (friday, saturday or sunday)
+    # Feature engineering (weekday, is_rounded)
     tr_data["weekday"] = tr_data.date.dt.weekday
+    tr_data["month"] = tr_data.date.dt.month
+    tr_data["is_rounded_10"] = tr_data.amount % 10 == 0
+    tr_data["is_rounded_50"] = tr_data.amount % 50 == 0
+    tr_data["is_credit"] = tr_data.amount > 0
+
 
     ### Perform NLP ###
 
