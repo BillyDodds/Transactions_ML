@@ -140,12 +140,6 @@ data_labs.category.value_counts().plot(kind='bar')
 
 
 
-
-    <matplotlib.axes._subplots.AxesSubplot at 0x1357be220>
-
-
-
-
 ![svg](figures/output_5_1.svg)
 
 
@@ -223,19 +217,6 @@ data_labs.drop("description", axis=1) # Not showing description for privacy reas
 
 
 <div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
 <table border="1" class="dataframe">
   <thead>
     <tr style="text-align: right;">
@@ -366,19 +347,6 @@ tr_data.drop("description", axis=1)
 
 
 <div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
 <table border="1" class="dataframe">
   <thead>
     <tr style="text-align: right;">
@@ -610,19 +578,6 @@ tr_data.iloc[[1]]
 
 
 <div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
 <table border="1" class="dataframe">
   <thead>
     <tr style="text-align: right;">
@@ -737,19 +692,6 @@ labelled_data
 
 
 <div>
-<style scoped>
-    .dataframe tbody tr th:only-of-type {
-        vertical-align: middle;
-    }
-
-    .dataframe tbody tr th {
-        vertical-align: top;
-    }
-
-    .dataframe thead th {
-        text-align: right;
-    }
-</style>
 <table border="1" class="dataframe">
   <thead>
     <tr style="text-align: right;">
@@ -952,7 +894,7 @@ def get_lookup(X_train:pd.DataFrame, X_test:pd.DataFrame) -> np.array:
 ## 5.1 Scraping Results
 The next idea I had to improve the accuracy of my model is to abuse Google's suggestions sidebar. When you google something like a restaurant, most of the time Google will give you a side-bar showcasing the business that it thinks best suits your search query. The side-bar has an html element which gives the business a category. For example, when I google "McDonald Gladesville" (the least creative example I could think of), Google tells me that this is a fast food restaurant. 
 
-<img src="files/google_sidebar_example.png">
+<img src="notebooks/google_sidebar_example.png">
 
 Thankfully, it turns out that the class of this HTML element is always labelled "YhemCb", meaning we can easily scrape it with BeautifulSoup, retrieving the HTML element:
 
