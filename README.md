@@ -1,16 +1,16 @@
 - [Project Overview](#project-overview)
   - [Aim](#aim)
   - [Instructions for Use](#instructions-for-use)
+    - [Use With Demo Files](#use-with-demo-files)
     - [First Time Use](#first-time-use)
     - [General Use](#general-use)
-    - [Use With Demo Files](#use-with-demo-files)
     - [Models and Flags](#models-and-flags)
 - [0. Dependencies](#0-dependencies)
 - [1. Load in the data](#1-load-in-the-data)
   - [1.1 Load and Join Labels](#11-load-and-join-labels)
   - [1.2 Scrape "Value Date" from Descriptions](#12-scrape-value-date-from-descriptions)
 - [2. Feature Extraction](#2-feature-extraction)
-  - [2.1 Quick Features](#21-quick-features)
+  - [2.1 Weekday](#21-weekday)
   - [2.2 Natural Language Processing](#22-natural-language-processing)
     - [2.2.0 Overview](#220-overview)
     - [2.2.1 Cleaning The Descriptions](#221-cleaning-the-descriptions)
@@ -33,6 +33,7 @@
   - [6.1 Implementing the Validation Function](#61-implementing-the-validation-function)
   - [6.2 Performing k-Fold Cross Validation](#62-performing-k-fold-cross-validation)
   - [6.3 Using Multiprocessing for Cross-Validation](#63-using-multiprocessing-for-cross-validation)
+- [7. Results](#7-results)
 
 # Project Overview
 
@@ -40,8 +41,12 @@
 To develop a program that can read in bank transactions and sort them into meaningful categories using machine learning.
 
 ## Instructions for Use
+### Use With Demo Files
+    
+To run the model using the demo files provided in `components/demo_files`, run the desired command with the flag `-d` to switch the path from `components/private_files` to `components/demo_files`.
+
 ### First Time Use
-This will be how the supervised learning process will be initialised, building the "labels.csv" file from scratch (as well as the "google.csv" file).
+This is how the supervised learning process will be initialised, building the "labels.csv" file from scratch (as well as the "google.csv" file).
 
 1. Download bank transactions as a CSV file in the form "date, amount, description, balance" labelled **"CSVData.csv"**. Place file in a new directory `components/private_files`.
 
@@ -66,16 +71,13 @@ The program has three main modes:
 
 2. Predict (`$python model.py predict <model> <flags>`)
 
-    This mode uses all previously labelled transactions to train a model to predict all unlabelled transactions in the CSVData.csv file.
+    This mode uses all previously labelled transactions to train a model to predict all unlabelled transactions in the "CSVData.csv" file.
     
     
 3. Evaluate (`$python model.py evaluate <model> <flags>`)
     
-    This mode takes only labelled transactions and performs k-fold cross validation, returning the average accuracy over the k folds.
+    This mode takes only labelled transactions and performs k-fold cross-validation, returning the average accuracy over the k folds.
     
-### Use With Demo Files
-    
-To run the model using the demo files provided in `components/demo_files`, run the desired command with the flag `-d` to switch the path from `components/private_files` to `components/demo_files`.
     
 ### Models and Flags
 
@@ -114,12 +116,16 @@ To run the model using the demo files provided in `components/demo_files`, run t
 
 Run `$python model.py help` to show this information.
 
-
 # 0. Dependencies
 
 
 ```python
+# Set path for notebook
+import os
+os.chdir("/Users/billydodds/Documents/Projects/Transactions_ML")
+
 import re
+import multiprocess as mp
 from typing import Dict, List, Any, Tuple, Callable, Union
 
 import pandas as pd
@@ -140,14 +146,36 @@ from sklearn.preprocessing import StandardScaler
 *All code cells in this section are modified extracts from `components/scripts/load_data.py`*
 
 ## 1.1 Load and Join Labels
-This code loads in my bank transactions which consists of a date, amount, description and account balance. Then, if the transaction appears in my labelled dataset, it adds its labelled class with a join. 
+This code loads in the bank transactions which consists of a date, amount, description and account balance. Then, if the transaction appears in the labelled dataset in "labels.csv", it adds its labelled class with a join. 
 
-A transaction is considered the same if it has the same description and amount to account for the fact that some purchases with the same description are in different classes (e.g. fuel vs. food is differentiated by the amount spent at the petrol station)
+The label of most transactions will be determined solely by the description. However, there may be certain transaction descriptions that change label depending on the amount of the transaction. For example, if I spend \\$2 at a petrol station, that shouldn't be categorised as "transport", because I probably didn't spend it on fuel. However, if I spend \\$30, then it's likely that I spent it on fuel, hence it should be labelled transport. This subset of transactions will have to be labelled based on both amount and description.
+
+In order to sensibly join on description and amount, we will need to strip the description down to its most basic form, devoid of numbers and dates that make it different to transactions from the same company. Similarly, if we are to join on amount, it would be more sensible to join on a rounded amount as opposed to exact amount to increase the chances of a match. 
+
+To do this, we implement a `clean` function (explained in detail in [Section 2.2.1](#221-cleaning-the-descriptions)) to strip the descriptions down to their important linguistic components, and a `round_abs_up` function to round the amounts up to the nearest $base$ in absolute value, using $base=5$. This function is defined below:
+
 
 
 ```python
+def round_abs_up(num, base):
+    sign = np.sign(num)
+    result = np.ceil(abs(num)/base)*base
+    return sign*result
+
+```
+
+Next, we need to separate the conventional transaction descriptions (those that would only need joining on clean descriptions) from those which require joining on both clean descriptions and rounded amounts. To do this, we look at the "labels.csv" file and group on `clean_desc`. Those transactions with only one label are in the former category, and will be joined only on `clean_desc`, while those descriptions with more than one label will be placed in the latter category to be joined on both `clean_desc` and `rounded_amount`. The following code does exactly this, successfully joining all labels found in "labels.csv" to "CSVData.csv".
+
+
+
+
+```python
+# Required functions, described later in the logbook
+from components.scripts.process_data import clean # Section 2.2.1
+from components.scripts.load_data import blacklist # Section 2.2.1
+
 # Set path
-path = "../components/private_files/"
+path = "./components/private_files/"
 
 # Load in transaction dat
 data = pd.read_csv(path + "CSVData.csv", header=None)
@@ -157,50 +185,87 @@ data = data.drop("balance", axis=1)
 data = data.astype({'amount':'float'})
 
 # Load in labels and join to data
-labels = pd.read_csv(path + "transactions_labelled.csv")
-labels = labels.drop("date", axis=1)
-labels = labels.drop_duplicates()
+labels = pd.read_csv(path + "labels.csv", header=None)
+labels.columns = ["round_amount", "clean_desc", "category"]
 
-labels.description = labels.description.str.strip()
-labels.description = labels.description.str.lower()
+# Merge some of the underrepresented labels
+labels.category = ["beers" if cat == "entertainment" else cat for cat in labels.category]
+labels.category = ["beers" if cat == "booze" else cat for cat in labels.category]
+labels.category = ["wages" if cat == "tutoring" else cat for cat in labels.category]
+labels.category = ["health" if cat == "education" else cat for cat in labels.category]
+labels.category = ["life/wellbeing" if cat == "health" else cat for cat in labels.category]
+labels.category = ["transfer" if cat == "donation" else cat for cat in labels.category]
+labels.category = ["transport" if cat in ["uber", "public transport", "fuel"] else cat for cat in labels.category]
+
+# Create clean descriptions and rounded amounts as columns for joining 
+# (clean function is explained in detail in Section 2.2.1)
 data.description = data.description.str.strip()
 data.description = data.description.str.lower()
+data["clean_desc"] = [clean(desc, blacklist) for desc in data.description]
+data["round_amount"] = [round_abs_up(am, 5) for am in data.amount]
 
-labels.amount = labels.amount.round(2)
-data.amount = data.amount.round(2)
+# Merge on unique description, label pairings first
+desc_table = pd.DataFrame(
+    labels[["clean_desc", "category"]]
+    .groupby(["clean_desc"])["category"]
+    .unique()
+    .apply(','.join)
+    .reset_index()
+)
 
-data_labs = data.merge(labels, on=["description", "amount"], how="left", validate="many_to_one")
+just_desc = desc_table[~desc_table.category.str.contains(",")] # Those transactions with a unique label for a given clean_desc
+amount_desc = desc_table[desc_table.category.str.contains(",")] # Those transactions with multiple labels for a given clean_desc
+
+# Merge all possible entries just on clean_desc
+data_labs = data.merge(just_desc, on="clean_desc", how="left", validate="many_to_one")
+
+# Take those entries in "labels.csv" that had two or more different labels for the same description ("amount_desc")
+# ready to merge their labels on [description, amount] to the transaction data.
+amount_desc_table = pd.DataFrame(
+    labels[["round_amount", "clean_desc", "category"]]
+    .groupby(["clean_desc", "round_amount"])["category"]
+    .unique()
+    .apply(','.join)
+    .reset_index()
+)
+
+# There should be no entries with the same description and the same value but different labels
+should_be_empty = amount_desc_table[amount_desc_table.category.str.contains(",")]
+if not should_be_empty.empty:
+    print(
+        "WARNING:",
+        "In 'labels.csv' there are two entries with the same rounded value and same description, but different classes. \n\n", 
+        should_be_empty, 
+        "\n\nThese will be omitted from the model"
+    )
+
+# Omit any conflicting labels
+amount_desc_table = amount_desc_table[~amount_desc_table.category.str.contains(",")]
+
+# Take only those rows with the descriptions that had multiple labels.
+amount_desc_table = amount_desc_table[
+    [True if desc in list(amount_desc.clean_desc) else False for desc in amount_desc_table.clean_desc] 
+]
+
+# Merge on amount and description
+data_labs = data_labs.merge(amount_desc_table, on=["round_amount","clean_desc"], how="left", validate="many_to_one")
+
+# Zip category values together
+data_labs["category"] = [x if str(x) != "nan" else y for x, y in zip(data_labs.category_x, data_labs.category_y)]
+data_labs = data_labs.drop(["category_x", "category_y", "clean_desc", "round_amount"], axis=1)
+
+# Reset index
+data_labs = data_labs.reset_index(drop=True)
 
 data_labs.category.value_counts().plot(kind='bar')
 
 ```
 
 
-
-![svg](figures/output_5_1.svg)
-
+![png](figures/output_7_1.png)
 
 
-```python
-# Merge some of the underrepresented labels
-data_labs.category = ["beers" if cat == "entertainment" else cat for cat in data_labs.category]
-data_labs.category = ["beers" if cat == "booze" else cat for cat in data_labs.category]
-data_labs.category = ["wages" if cat == "tutoring" else cat for cat in data_labs.category]
-data_labs.category = ["health" if cat == "education" else cat for cat in data_labs.category]
-data_labs.category = ["life/wellbeing" if cat == "health" else cat for cat in data_labs.category]
-data_labs.category = ["transfer" if cat == "donation" else cat for cat in data_labs.category]
-data_labs.category = ["transport" if cat in ["uber", "public transport", "fuel"] else cat for cat in data_labs.category]
-
-data_labs.reset_index()
-data_labs.category.value_counts().plot(kind='bar')
-
-```
-
-
-![svg](figures/output_6_1.svg)
-
-
-This narrows down the categories to 7:
+As the bar chart shows, the labels I have chosen for this project are:
 1. food
 2. transfers
 3. beers
@@ -232,16 +297,22 @@ data_labs.value_date = pd.to_datetime(data_labs.value_date, format='%d/%m/%Y')
 # If there is no value date in the description, 
 # it is assumed that the date of the record is the date of the transaction.
 transaction_date = []
-for index, row in data_labs.iterrows():
+for _, row in data_labs.iterrows():
     if pd.isnull(row.value_date):
         transaction_date.append(row.date)
     else:
         transaction_date.append(row.value_date)
         
 data_labs["trans_date"] = transaction_date
-data_labs.drop("description", axis=1) # Not showing description for privacy reasons
+
+pd.set_option('display.max_colwidth', -1)
+data_labs.iloc[[78, 79]]
 
 ```
+
+    <ipython-input-4-fd897a03372b>:25: FutureWarning: Passing a negative integer is deprecated in version 1.0 and will not be supported in future version. Instead, use None to not limit the column width.
+      pd.set_option('display.max_colwidth', -1)
+
 
 
 
@@ -253,6 +324,7 @@ data_labs.drop("description", axis=1) # Not showing description for privacy reas
       <th></th>
       <th>date</th>
       <th>amount</th>
+      <th>description</th>
       <th>category</th>
       <th>value_date</th>
       <th>trans_date</th>
@@ -260,109 +332,43 @@ data_labs.drop("description", axis=1) # Not showing description for privacy reas
   </thead>
   <tbody>
     <tr>
-      <th>0</th>
-      <td>2020-07-27</td>
-      <td>50.0</td>
-      <td>wages</td>
-      <td>NaT</td>
-      <td>2020-07-27</td>
-    </tr>
-    <tr>
-      <th>1</th>
-      <td>2020-07-27</td>
-      <td>-4.8</td>
+      <th>78</th>
+      <td>2020-06-20</td>
+      <td>-12.90</td>
+      <td>chargrill charlies       lane cove    au</td>
       <td>food</td>
       <td>NaT</td>
-      <td>2020-07-27</td>
+      <td>2020-06-20</td>
     </tr>
     <tr>
-      <th>2</th>
-      <td>2020-07-27</td>
-      <td>-4.0</td>
-      <td>food</td>
-      <td>NaT</td>
-      <td>2020-07-27</td>
-    </tr>
-    <tr>
-      <th>3</th>
-      <td>2020-07-26</td>
-      <td>50.0</td>
-      <td>wages</td>
-      <td>NaT</td>
-      <td>2020-07-26</td>
-    </tr>
-    <tr>
-      <th>4</th>
-      <td>2020-07-25</td>
-      <td>-14.5</td>
-      <td>food</td>
-      <td>NaT</td>
-      <td>2020-07-25</td>
-    </tr>
-    <tr>
-      <th>...</th>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-      <td>...</td>
-    </tr>
-    <tr>
-      <th>595</th>
-      <td>2019-09-13</td>
-      <td>-36.0</td>
-      <td>beers</td>
-      <td>2019-09-11</td>
-      <td>2019-09-11</td>
-    </tr>
-    <tr>
-      <th>596</th>
-      <td>2019-09-12</td>
-      <td>-42.2</td>
-      <td>food</td>
-      <td>2019-09-09</td>
-      <td>2019-09-09</td>
-    </tr>
-    <tr>
-      <th>597</th>
-      <td>2019-09-12</td>
-      <td>-13.0</td>
-      <td>beers</td>
-      <td>2019-09-06</td>
-      <td>2019-09-06</td>
-    </tr>
-    <tr>
-      <th>598</th>
-      <td>2019-09-12</td>
-      <td>19.0</td>
-      <td>food</td>
-      <td>2019-09-09</td>
-      <td>2019-09-09</td>
-    </tr>
-    <tr>
-      <th>599</th>
-      <td>2019-09-11</td>
-      <td>-5.0</td>
-      <td>food</td>
-      <td>NaT</td>
-      <td>2019-09-11</td>
+      <th>79</th>
+      <td>2020-06-20</td>
+      <td>-10.99</td>
+      <td>blooms the chemist j nowra ns aus card xx6725 value date: 18/06/2020</td>
+      <td>life/wellbeing</td>
+      <td>2020-06-18</td>
+      <td>2020-06-18</td>
     </tr>
   </tbody>
 </table>
-<p>600 rows × 5 columns</p>
 </div>
 
 
 
+
+```python
+pd.reset_option('display.max_colwidth')
+```
+
 # 2. Feature Extraction
 
-## 2.1 Quick Features
+## 2.1 Weekday
 
 *Code cell for this sub-section is a modified extract from `components/scripts/load_data.py`*
 
 Next, I wanted to pull out some interesting features. I figured whether the transaction occurred on a weekend would be telling. Initially I was going to just use a boolean isWeekend column marking when the weekday was 4, 5 or 6 (friday, saturday or sunday), but then I thought to let the models determine a cut off naturally, leaving the weekday as an integer.
 
-Whether the entry was rounded to 50 or 10 could also be useful in differentiating a natural price from a shopping transaction to an artificially "nice" number that is usually characteristic of transfers.
+Whether the entry was rounded to 50 or 10 could also be useful in differentiating a natural price from a shopping transaction to an artificially "nice" number that is usually characteristic of transfers. And finally, a simple `is_credit` feature will differentiate credits from debits.
 
 
 ```python
@@ -1034,7 +1040,7 @@ def google(query:str, verbose=True) -> str:
     comp = soup.find_all("div", class_="wwUB2c PZPZlf") # potential results for larger company
     if len(bus) > 0:
         bus = str(bus[-1])
-        bus = bus.split(">")[1].split("<")[0]
+        bus = bus.split("<span>")[1].split("<")[0]
         if " in " in bus:
             bus = bus.split(" in ")[0]
         print("✅ query: " + query, "result: " + bus) if verbose else None
@@ -1051,6 +1057,8 @@ def google(query:str, verbose=True) -> str:
 
 ## 5.2 Categorising Results
 Once we have retrieved all google query results for each description in the test data, we have the job of categorising them into classes. To do this, I identify a few key indicators for each class (transfer and wages have been left out because it is unlikely that a google search would retrieve any information for these classes). For example, if the google result contains "cafe", "bakery" etc, then it's quite clearly food. Below is the method `categorise` which attempts to sort these results into categories.
+
+Future work might have me improve the modifiability of this function by adding a read in a file to define the key words for in each class, instead of hard-coding them into the function.
 
 
 ```python
@@ -1095,32 +1103,50 @@ Because Google only permits a certain number of google queries from a given IP a
 
 To do this, I simply stored the search results for each transaction description in `components/files/google.csv`. Then, before I retrieved the google results from the test data the webscraping way, I would check to see if I had googled it previously by joining the training data to the data in the `google.csv` file. Then I would only ever scrape transactions that I hadn't googled previously before appending their results to the same `google.csv` to be used in the future.
 
+I also implemented the option for multiprocessing with keyword argument `slow=False`. This speeds up the process significantly, which makes a huge difference for "autolabel" mode.
+
 
 
 ```python
-def get_webscrape(testing, path):
+def google_mp(features):
+    print("trying")
+    if isinstance(features, str):
+        return [(features, google(features))]
+    else:
+        return [(query, google(query)) for query in features]
+
+def get_webscrape(testing:pd.DataFrame, path:str, slow=False) -> np.array:
     # Join Webscraping
-    results = pd.read_csv(path + "google.csv")
+    try:
+        results = pd.read_csv(path + "google.csv")
+    except FileNotFoundError:
+        results = pd.DataFrame(columns=["desc_features", "google"])
+        results.to_csv(path + "google.csv", index=None)
 
     googled = testing.merge(results, how="left", on="desc_features", validate="many_to_one")
     ungoogled = googled[pd.isna(googled.google)]
     if len(ungoogled) > 0:
         # Scrape any descriptions that haven't been googled before.
         ungoogled = ungoogled[["desc_features"]].drop_duplicates()
-        ungoogled["google"] = [google(query) for query in ungoogled.desc_features]
+        queries = ungoogled.desc_features
+        pool = mp.Pool(mp.cpu_count() - 1)
+        google_results = pool.map(google, queries)
+        pool.close()
+        pool.join()
+
+        ungoogled = pd.DataFrame({"desc_features":queries, "google":google_results})
 
         # Record their results in the google.csv file
         ungoogled.to_csv(path + "google.csv", mode = 'a', header = False, index=False)
 
         # Join webscraping as before
         results = pd.read_csv(path + "google.csv")
-        googled = tr_data.merge(results, how="left", on="desc_features", validate="many_to_one")
-
+        googled = testing.merge(results, how="left", on="desc_features", validate="many_to_one")
         # Assert that there is nothing left ungoogled
         assert len(googled[pd.isna(googled.google)]) == 0
 
     # Categorise 
-    google_preds = [categorise(goog, verbose=False) for goog in googled.google]
+    google_preds = np.array([categorise(goog, verbose=False) for goog in googled.google])
     return google_preds
 ```
 
@@ -1230,7 +1256,7 @@ print(f"Average over {n_folds} folds: {acc}" )
     8 of 10
     9 of 10
     10 of 10
-    Average over 10 folds: 0.8717
+    Average over 10 folds: 0.8933
 
 
 ## 6.3 Using Multiprocessing for Cross-Validation
@@ -1238,7 +1264,6 @@ We have written the `run_fold` function in this way so that we can easily implem
 
 
 ```python
-import multiprocess as mp
 accuracies = []
 def record(result):
     accuracies.append(result)
@@ -1256,10 +1281,88 @@ acc = round(np.mean(accuracies),4)
 print(f"Average over {n_folds} folds: {acc}" )
 ```
 
-    Average over 10 folds: 0.8717
+    Average over 10 folds: 0.8933
+
+
+# 7. Results
+
+The following table shows the resultant accuracies of each model without lookup or webscrape. I conducted 5 trials per model. These results are found in "demo_files/results.csv".
 
 
 
-```python
 
-```
+
+
+
+
+
+
+<table>
+<tr><th>Raw Trials</th><th>Results</th></tr>
+<tr><td>
+
+| folds | lookup | webscrape | model        | accuracy |
+|-------|--------|-----------|--------------|----------|
+| 10    | FALSE  | FALSE     | dt           | 0.8483   |
+| 10    | FALSE  | FALSE     | dt           | 0.8533   |
+| 10    | FALSE  | FALSE     | dt           | 0.86     |
+| 10    | FALSE  | FALSE     | dt           | 0.8517   |
+| 10    | FALSE  | FALSE     | dt           | 0.8383   |
+| 10    | FALSE  | FALSE     | svm          | 0.8667   |
+| 10    | FALSE  | FALSE     | svm          | 0.8517   |
+| 10    | FALSE  | FALSE     | svm          | 0.8567   |
+| 10    | FALSE  | FALSE     | svm          | 0.8617   |
+| 10    | FALSE  | FALSE     | svm          | 0.8667   |
+| 10    | FALSE  | FALSE     | nn           | 0.8683   |
+| 10    | FALSE  | FALSE     | nn           | 0.8733   |
+| 10    | FALSE  | FALSE     | nn           | 0.8633   |
+| 10    | FALSE  | FALSE     | nn           | 0.8783   |
+| 10    | FALSE  | FALSE     | nn           | 0.8667   |
+| 10    | FALSE  | FALSE     | mydt         | 0.7583   |
+| 10    | FALSE  | FALSE     | mydt         | 0.7517   |
+| 10    | FALSE  | FALSE     | mydt         | 0.755    |
+| 10    | FALSE  | FALSE     | mydt         | 0.7533   |
+| 10    | FALSE  | FALSE     | mydt         | 0.7483   |
+| 10    | FALSE  | FALSE     | rf           | 0.8833   |
+| 10    | FALSE  | FALSE     | rf           | 0.8817   |
+| 10    | FALSE  | FALSE     | rf           | 0.8883   |
+| 10    | FALSE  | FALSE     | rf           | 0.8833   |
+| 10    | FALSE  | FALSE     | rf           | 0.8617   |
+| 10    | FALSE  | FALSE     | ovr          | 0.88     |
+| 10    | FALSE  | FALSE     | ovr          | 0.87     |
+| 10    | FALSE  | FALSE     | ovr          | 0.88     |
+| 10    | FALSE  | FALSE     | ovr          | 0.8767   |
+| 10    | FALSE  | FALSE     | ovr          | 0.885    |
+| 10    | FALSE  | FALSE     | ovo          | 0.8817   |
+| 10    | FALSE  | FALSE     | ovo          | 0.875    |
+| 10    | FALSE  | FALSE     | ovo          | 0.8783   |
+| 10    | FALSE  | FALSE     | ovo          | 0.8717   |
+| 10    | FALSE  | FALSE     | ovo          | 0.875    |
+| 10    | FALSE  | FALSE     | mlp          | 0.8733   |
+| 10    | FALSE  | FALSE     | mlp          | 0.8667   |
+| 10    | FALSE  | FALSE     | mlp          | 0.89     |
+| 10    | FALSE  | FALSE     | mlp          | 0.8867   |
+| 10    | FALSE  | FALSE     | mlp          | 0.8683   |
+| 10    | FALSE  | FALSE     | rf optimised | 0.88     |
+| 10    | FALSE  | FALSE     | rf optimised | 0.8917   |
+| 10    | FALSE  | FALSE     | rf optimised | 0.8917   |
+| 10    | FALSE  | FALSE     | rf optimised | 0.8883   |
+| 10    | FALSE  | FALSE     | rf optimised | 0.8767   |
+
+</td><td>
+
+| Model          | Average accuracy |
+|----------------|------------------|
+| rf   optimised | 0.88568          |
+| rf             | 0.87966          |
+| ovr            | 0.87834          |
+| mlp            | 0.877            |
+| ovo            | 0.87634          |
+| nn             | 0.86998          |
+| svm            | 0.8607           |
+| dt             | 0.85032          |
+| mydt           | 0.75332          |
+
+</td></tr> </table>
+
+

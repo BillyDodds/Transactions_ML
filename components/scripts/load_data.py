@@ -55,13 +55,13 @@ def load_data(path:str) -> pd.DataFrame:
             .reset_index()
         )
 
-        just_desc = desc_table[~desc_table.category.str.contains(",")]
-        amount_desc = desc_table[desc_table.category.str.contains(",")]
+        just_desc = desc_table[~desc_table.category.str.contains(",")] # Those transactions with a unique label for a given clean_desc
+        amount_desc = desc_table[desc_table.category.str.contains(",")] # Those transactions with multiple labels for a given clean_desc
 
         data_labs = data.merge(just_desc, on="clean_desc", how="left", validate="many_to_one")
 
         # Take those entries in "labels.csv" that had two or more different labels for the same description ("amount_desc")
-        # and merge their labels on [description, label, amount]
+        # ready to merge their labels on [description, amount] to the transaction data.
         amount_desc_table = pd.DataFrame(
             labels[["round_amount", "clean_desc", "category"]]
             .groupby(["clean_desc", "round_amount"])["category"]
