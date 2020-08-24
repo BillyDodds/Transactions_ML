@@ -1,3 +1,5 @@
+# Categorisation of Bank Transactions with Machine Learning
+
 - [Project Overview](#project-overview)
   - [Aim](#aim)
   - [Instructions for Use](#instructions-for-use)
@@ -41,7 +43,7 @@ To develop a program that can read in bank transactions and sort them into meani
 
 ## Instructions for Use
 ### First Time Use
-This will be how the supervised learning process will be initialised, building the "labels.csv" file from scratch (as well as the "google.csv" file).
+This is how the supervised learning process will be initialised, building the "labels.csv" file from scratch (as well as the "google.csv" file).
 
 1. Download bank transactions as a CSV file in the form "date, amount, description, balance" labelled **"CSVData.csv"**. Place file in a new directory `components/private_files`.
 
@@ -71,7 +73,7 @@ The program has three main modes:
     
 3. Evaluate (`$python model.py evaluate <model> <flags>`)
     
-    This mode takes only labelled transactions and performs k-fold cross validation, returning the average accuracy over the k folds.
+    This mode takes only labelled transactions and performs k-fold cross-validation, returning the average accuracy over the k folds.
     
 ### Use With Demo Files
     
@@ -210,7 +212,7 @@ This narrows down the categories to 7:
 7. life/wellbeing
 
 ## 1.2 Scrape "Value Date" from Descriptions
-Some transactions are not processed immediately at the point of sale. When the bank transaction is finally approved, my bank records this as the date and appends the actual date of the transaction (which may have been up to 5 days in the past, the average I found was a 3 day delay) to the end of the description as "Value Date: dd/mm/YYYY". If the transaction goes through immediately, it just records the current date and leaves the description as is. (At least, this is the process that I inferred. I was unable to find any documentation to confirm this.)
+Some transactions are not processed immediately at the point of sale. When the bank transaction is finally approved, my bank records this as the date and appends the actual date of the transaction (which may have been up to five days in the past, the average I found was a three day delay) to the end of the description as "Value Date: dd/mm/YYYY". If the transaction goes through immediately, it just records the current date and leaves the description as is. (At least, this is the process that I inferred. I was unable to find any documentation to confirm this.)
 
 Hence, I had to do a little scraping to collect these value dates when they appeared so that I had the date of the actual transaction.
 
@@ -360,7 +362,7 @@ data_labs.drop("description", axis=1) # Not showing description for privacy reas
 
 *Code cell for this sub-section is a modified extract from `components/scripts/load_data.py`*
 
-Next, I wanted to pull out some interesting features. I figured whether the transaction occurred on a weekend would be telling. Initially I was going to just use a boolean isWeekend column marking when the weekday was 4, 5 or 6 (friday, saturday or sunday), but then I thought to let the models determine a cut off naturally, leaving the weekday as an integer.
+Next, I wanted to pull out some interesting features. I figured whether the transaction occurred on a weekend would be telling. Initially, I was going to just use a boolean isWeekend column marking when the weekday was 4, 5 or 6 (friday, saturday or sunday), but then I thought to let the models determine a cut off naturally, leaving the weekday as an integer.
 
 Whether the entry was rounded to 50 or 10 could also be useful in differentiating a natural price from a shopping transaction to an artificially "nice" number that is usually characteristic of transfers.
 
@@ -572,7 +574,7 @@ tr_data["desc_features"] = [clean(desc, blacklist) for desc in tr_data.descripti
 To address the fact that shortened words are common, I proposed a very naive approach were I essentially "chop up" larger words down to a length of three in the following manner:
 If given the word "McDonalds", we would add to our corpus the words "McDonalds", "McDonald", "McDonal", "McDona", "McDon", "McDo", "McD". 
 
-Essentially, this is adding all character n-grams but rooting the starting character.
+Essentially, this is adding all character n-grams rooted at the starting character.
 
 A convincing reason why this isn't a horrible idea is that my bank appends the "Value Date" to the end of the description, overwriting the description if it becomes too long. This results in words being cut off frequently. 
 
@@ -686,7 +688,7 @@ tr_data.iloc[[1]]
 
 
 #### Creating Each Class Corpus
-Here, I define a get_corpus function that will collect the corpus of each class. The idea is to collect a list of words for each class. The list of words will in some way characterise the class. I added a threshold parameter which I can adjust to only count words that appear a certain number of times in a particular class. If the word "panther" appears in only one "food" entry, then its unlikely that a description containing "panther" would generalise to every food item.
+Here, I define a get_corpus function that will collect the corpus of each class. The idea is to collect a list of words for each class. The list of words will in some way characterise the class. I added a threshold parameter which I can adjust to only count words that appear a certain number of times in a particular class. If the word "soap" appears in only one "food" entry, then its unlikely that a description containing "soap" would generalise to every food item.
 
 
 ```python
@@ -1005,7 +1007,7 @@ def get_lookup(X_train:pd.DataFrame, X_test:pd.DataFrame) -> np.array:
 # 5. Implementing a "Webscrape" functionality
 
 ## 5.1 Scraping Results
-The next idea I had to improve the accuracy of my model is to abuse Google's suggestions sidebar. When you google something like a restaurant, most of the time Google will give you a side-bar showcasing the business that it thinks best suits your search query. The side-bar has an html element which gives the business a category. For example, when I google "McDonald Gladesville" (the least creative example I could think of), Google tells me that this is a fast food restaurant. 
+The next idea I had to improve the accuracy of my model is to abuse Google's suggestions sidebar. When you google something like a restaurant, most of the time Google will give you a side-bar showcasing the business that it thinks best suits your search query. The side-bar has an html element which gives the business a category. For example, when I google "McDonald Gladesville", Google tells me that this is a fast food restaurant. 
 
 <img src="figures/google_sidebar_example.png">
 
@@ -1091,7 +1093,7 @@ def categorise(goog:str, verbose=True) -> Union[str, None]:
 ```
 
 ## 5.3 Optimisation and Implementation
-Because Google only permits a certain number of google queries from a given IP adress per day, I needed to store my search results so that I didn't have to re-scrape them every time I ran my model (I only really ever had one shot per day to run my model, the second time Google would lock me out).
+Because Google only permits a certain number of google queries from a given IP adress per day, we need to store the search results so that we don't have to re-scrape them every time the model is run (I only really ever had one shot per day to run my model, the second time Google would lock me out).
 
 To do this, I simply stored the search results for each transaction description in `components/files/google.csv`. Then, before I retrieved the google results from the test data the webscraping way, I would check to see if I had googled it previously by joining the training data to the data in the `google.csv` file. Then I would only ever scrape transactions that I hadn't googled previously before appending their results to the same `google.csv` to be used in the future.
 
