@@ -312,11 +312,6 @@ data_labs.iloc[[78, 79]]
 
 ```
 
-    <ipython-input-4-fd897a03372b>:25: FutureWarning: Passing a negative integer is deprecated in version 1.0 and will not be supported in future version. Instead, use None to not limit the column width.
-      pd.set_option('display.max_colwidth', -1)
-
-
-
 
 
 <div>
